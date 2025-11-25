@@ -1,0 +1,650 @@
+{
+  "info": {
+    "name": "MCA Lending API",
+    "_postman_id": "mca-lending-api-collection",
+    "description": "Complete API collection for MCA Lending system with user response tracking",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000",
+      "type": "string"
+    },
+    {
+      "key": "uniqueId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "mcaId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "responseId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health & Info",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Root Info",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/",
+              "host": ["{{baseUrl}}"],
+              "path": [""]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "MCA Records",
+      "item": [
+        {
+          "name": "Get All MCA Records",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/mca?page=1&limit=10&isActive=true",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "mca"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Page number"
+                },
+                {
+                  "key": "limit",
+                  "value": "10",
+                  "description": "Records per page"
+                },
+                {
+                  "key": "isActive",
+                  "value": "true",
+                  "description": "Filter by active status"
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "description": "Search by uniqueId",
+                  "disabled": true
+                },
+                {
+                  "key": "sortBy",
+                  "value": "createdAt",
+                  "description": "Field to sort by",
+                  "disabled": true
+                },
+                {
+                  "key": "sortOrder",
+                  "value": "desc",
+                  "description": "asc or desc",
+                  "disabled": true
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get MCA by ID or UniqueId",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.success && jsonData.data) {",
+                  "        pm.collectionVariables.set('uniqueId', jsonData.data.uniqueId);",
+                  "        pm.collectionVariables.set('mcaId', jsonData.data._id);",
+                  "        console.log('Saved uniqueId:', jsonData.data.uniqueId);",
+                  "        console.log('Saved mcaId:', jsonData.data._id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/mca/{{uniqueId}}?includeResponses=true",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "mca", "{{uniqueId}}"],
+              "query": [
+                {
+                  "key": "includeResponses",
+                  "value": "true",
+                  "description": "Include user responses"
+                }
+              ]
+            },
+            "description": "Get MCA record by MongoDB ID or uniqueId. Auto-saves variables for other requests."
+          },
+          "response": []
+        },
+        {
+          "name": "Get MCA Statistics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/mca/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "mca", "stats"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create MCA Record",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.success && jsonData.data) {",
+                  "        pm.collectionVariables.set('uniqueId', jsonData.data.uniqueId);",
+                  "        pm.collectionVariables.set('mcaId', jsonData.data._id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"businessName\": \"Test Company Inc\",\n  \"contactPerson\": \"John Doe\",\n  \"email\": \"john@testcompany.com\",\n  \"phone\": \"555-1234\",\n  \"amount\": \"50000\",\n  \"status\": \"pending\",\n  \"address\": \"123 Test Street\",\n  \"city\": \"New York\",\n  \"state\": \"NY\",\n  \"notes\": \"Created via Postman\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/mca",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "mca"]
+            },
+            "description": "Create a new MCA record. UniqueId will be auto-generated if not provided."
+          },
+          "response": []
+        },
+        {
+          "name": "Update MCA Record",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"approved\",\n  \"notes\": \"Updated via Postman\",\n  \"amount\": \"55000\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/mca/{{uniqueId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "mca", "{{uniqueId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Soft Delete MCA",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/mca/{{uniqueId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "mca", "{{uniqueId}}"]
+            },
+            "description": "Soft delete - sets isActive to false"
+          },
+          "response": []
+        },
+        {
+          "name": "Restore MCA",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/mca/{{uniqueId}}/restore",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "mca", "{{uniqueId}}", "restore"]
+            },
+            "description": "Restore a soft-deleted record"
+          },
+          "response": []
+        },
+        {
+          "name": "Hard Delete MCA (Permanent)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/mca/{{uniqueId}}/hard",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "mca", "{{uniqueId}}", "hard"]
+            },
+            "description": "⚠️ WARNING: Permanently deletes the record and all associated responses!"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "User Responses",
+      "item": [
+        {
+          "name": "Get All Responses",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/responses?page=1&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "responses"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                },
+                {
+                  "key": "status",
+                  "value": "submitted",
+                  "disabled": true
+                },
+                {
+                  "key": "mcaId",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "uniqueId",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Responses for Specific MCA",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/responses/mca/{{uniqueId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "responses", "mca", "{{uniqueId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Response by ID",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.success && jsonData.data) {",
+                  "        pm.collectionVariables.set('responseId', jsonData.data._id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/responses/{{responseId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "responses", "{{responseId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Response Statistics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/responses/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "responses", "stats"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Submit User Response (Form Submission)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.success && jsonData.data) {",
+                  "        pm.collectionVariables.set('responseId', jsonData.data._id);",
+                  "        console.log('Response created with ID:', jsonData.data._id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"uniqueId\": \"{{uniqueId}}\",\n  \"isVerified\": true,\n  \"comments\": \"All information looks correct. Great service!\",\n  \"formData\": {\n    \"signature\": \"John Doe\",\n    \"signatureDate\": \"2024-11-24\",\n    \"acknowledgedTerms\": true,\n    \"ipAddress\": \"192.168.1.100\"\n  },\n  \"verifiedFields\": [\n    {\n      \"fieldName\": \"businessName\",\n      \"isCorrect\": true,\n      \"note\": \"Verified and correct\"\n    },\n    {\n      \"fieldName\": \"amount\",\n      \"isCorrect\": false,\n      \"correctedValue\": \"55000\",\n      \"note\": \"Amount should be $55,000, not $50,000\"\n    },\n    {\n      \"fieldName\": \"contactPerson\",\n      \"isCorrect\": true,\n      \"note\": \"Correct\"\n    }\n  ],\n  \"userContact\": {\n    \"name\": \"John Doe\",\n    \"email\": \"john@example.com\",\n    \"phone\": \"555-1234-5678\"\n  },\n  \"status\": \"submitted\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/responses",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "responses"]
+            },
+            "description": "Submit a user response form. This will automatically link to the MCA record via uniqueId."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Response",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Updated comments after review\",\n  \"isVerified\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/responses/{{responseId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "responses", "{{responseId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Response Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"approved\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/responses/{{responseId}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "responses", "{{responseId}}", "status"]
+            },
+            "description": "Valid statuses: pending, submitted, approved, rejected"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Response",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/responses/{{responseId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "responses", "{{responseId}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Complete Workflow Example",
+      "item": [
+        {
+          "name": "Step 1 - Create Test MCA",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.collectionVariables.set('uniqueId', jsonData.data.uniqueId);",
+                  "    pm.collectionVariables.set('mcaId', jsonData.data._id);",
+                  "    console.log('✅ Step 1 Complete: MCA created with uniqueId:', jsonData.data.uniqueId);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"businessName\": \"Workflow Test Company\",\n  \"contactPerson\": \"Jane Smith\",\n  \"email\": \"jane@workflow.com\",\n  \"phone\": \"555-9999\",\n  \"amount\": \"75000\",\n  \"status\": \"pending\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/mca",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "mca"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Step 2 - Get MCA Details",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var jsonData = pm.response.json();",
+                  "    console.log('✅ Step 2 Complete: MCA retrieved');",
+                  "    console.log('Business:', jsonData.data.businessName);",
+                  "    console.log('Amount:', jsonData.data.amount);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/mca/{{uniqueId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "mca", "{{uniqueId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Step 3 - User Submits Response",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.collectionVariables.set('responseId', jsonData.data._id);",
+                  "    console.log('✅ Step 3 Complete: Response submitted');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"uniqueId\": \"{{uniqueId}}\",\n  \"isVerified\": true,\n  \"comments\": \"Everything is perfect!\",\n  \"userContact\": {\n    \"name\": \"Jane Smith\",\n    \"email\": \"jane@workflow.com\",\n    \"phone\": \"555-9999\"\n  },\n  \"status\": \"submitted\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/responses",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "responses"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Step 4 - Verify Response Linked",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var jsonData = pm.response.json();",
+                  "    console.log('✅ Step 4 Complete: Response linked to MCA');",
+                  "    console.log('Number of responses:', jsonData.data.userResponses.length);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/mca/{{uniqueId}}?includeResponses=true",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "mca", "{{uniqueId}}"],
+              "query": [
+                {
+                  "key": "includeResponses",
+                  "value": "true"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Step 5 - Approve Response",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    console.log('✅ Step 5 Complete: Response approved!');",
+                  "    console.log('🎉 Workflow completed successfully!');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"approved\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/responses/{{responseId}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "responses", "{{responseId}}", "status"]
+            }
+          },
+          "response": []
+        }
+      ],
+      "description": "Run these requests in order (Step 1 → Step 5) to test the complete workflow"
+    }
+  ]
+}
+
