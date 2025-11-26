@@ -41,6 +41,14 @@ const options = {
       }
     ],
     components: {
+      securitySchemes: {
+        BearerAuth: {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+          description: 'Enter JWT token from /api/auth/login'
+        }
+      },
       schemas: {
         MCA: {
           type: 'object',

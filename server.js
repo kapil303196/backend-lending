@@ -11,6 +11,7 @@ const mcaRoutes = require('./routes/mcaRoutes');
 const userResponseRoutes = require('./routes/userResponseRoutes');
 const uploadRoutes = require('./routes/uploadRoutes');
 const addressRoutes = require('./routes/addressRoutes');
+const authRoutes = require('./routes/authRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -72,6 +73,7 @@ app.get('/health', (req, res) => {
 });
 
 // API Routes
+app.use('/api/auth', authRoutes);
 app.use('/api/mca', mcaRoutes);
 app.use('/api/responses', userResponseRoutes);
 app.use('/api/upload', uploadRoutes);

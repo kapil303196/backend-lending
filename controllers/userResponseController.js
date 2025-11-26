@@ -29,7 +29,31 @@ exports.getAllResponses = async (req, res) => {
     }
     
     const skip = (parseInt(page) - 1) * parseInt(limit);
-    const sort = { [sortBy]: sortOrder === 'asc' ? 1 : -1 };
+    
+    // Handle different sort fields
+    let sort = {};
+    const order = sortOrder === 'asc' ? 1 : -1;
+    
+    switch (sortBy) {
+      case 'amount':
+        // Sort by requested amount (stored in formData.amountRequested)
+        sort = { 'formData.amountRequested': order };
+        break;
+      case 'revenue':
+        // Sort by monthly revenue (stored in formData.monthlyRevenue)
+        sort = { 'formData.monthlyRevenue': order };
+        break;
+      case 'uniqueId':
+        sort = { uniqueId: order };
+        break;
+      case 'status':
+        sort = { status: order };
+        break;
+      case 'createdAt':
+      default:
+        sort = { createdAt: order };
+        break;
+    }
     
     const [responses, total] = await Promise.all([
       UserResponse.find(query)

@@ -8,7 +8,7 @@ const userResponseController = require('../controllers/userResponseController');
  *   get:
  *     tags: [User Responses]
  *     summary: Get all user responses
- *     description: Retrieve all user responses with pagination and filtering
+ *     description: Retrieve all user responses with pagination, filtering, and sorting
  *     parameters:
  *       - in: query
  *         name: page
@@ -33,6 +33,20 @@ const userResponseController = require('../controllers/userResponseController');
  *         name: uniqueId
  *         schema:
  *           type: string
+ *       - in: query
+ *         name: sortBy
+ *         schema:
+ *           type: string
+ *           enum: [createdAt, uniqueId, status, amount, revenue]
+ *           default: createdAt
+ *         description: Field to sort by (amount = formData.amountRequested, revenue = formData.monthlyRevenue)
+ *       - in: query
+ *         name: sortOrder
+ *         schema:
+ *           type: string
+ *           enum: [asc, desc]
+ *           default: desc
+ *         description: Sort order (ascending or descending)
  *     responses:
  *       200:
  *         description: List of user responses
