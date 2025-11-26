@@ -55,6 +55,19 @@ router.get('/', userResponseController.getAllResponses);
 
 /**
  * @swagger
+ * /api/responses/dashboard-stats:
+ *   get:
+ *     tags: [User Responses]
+ *     summary: Get comprehensive dashboard statistics
+ *     description: Get detailed stats for charts (funding per day, amounts, revenue vs lending)
+ *     responses:
+ *       200:
+ *         description: Dashboard statistics
+ */
+router.get('/dashboard-stats', userResponseController.getDashboardStats);
+
+/**
+ * @swagger
  * /api/responses/stats:
  *   get:
  *     tags: [User Responses]

@@ -182,13 +182,18 @@ exports.createResponse = async (req, res) => {
         : bankStatements;
     }
     
+    // Get IP address (handle proxy headers)
+    const ipAddress = req.headers['x-forwarded-for'] 
+      ? req.headers['x-forwarded-for'].split(',')[0].trim() 
+      : req.ip || req.connection.remoteAddress;
+
     // Create the response
     const userResponse = new UserResponse({
       mcaId: mca._id,
       uniqueId: uniqueId,
       ...responseData,
       bankStatements: bankStatementsArray,
-      ipAddress: req.ip || req.connection.remoteAddress,
+      ipAddress: ipAddress,
       userAgent: req.get('user-agent')
     });
     
@@ -330,7 +335,200 @@ exports.updateResponseStatus = async (req, res) => {
   }
 };
 
-// Get response statistics
+// Get detailed statistics for dashboard
+exports.getDashboardStats = async (req, res) => {
+  try {
+    // 1. Status counts
+    const [total, pending, submitted, approved, rejected] = await Promise.all([
+      UserResponse.countDocuments(),
+      UserResponse.countDocuments({ status: 'pending' }),
+      UserResponse.countDocuments({ status: 'submitted' }),
+      UserResponse.countDocuments({ status: 'approved' }),
+      UserResponse.countDocuments({ status: 'rejected' })
+    ]);
+
+    // 2. Funding asked per day (last 30 days)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const fundingPerDay = await UserResponse.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: thirtyDaysAgo },
+          'formData.amountRequested': { $exists: true, $ne: null }
+        }
+      },
+      {
+        $group: {
+          _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+          totalAmount: {
+            $sum: {
+              $convert: {
+                input: {
+                  $replaceAll: {
+                    input: { $toString: "$formData.amountRequested" },
+                    find: ",",
+                    replacement: ""
+                  }
+                },
+                to: "double",
+                onError: 0,
+                onNull: 0
+              }
+            }
+          }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]);
+
+    // 3. Total Asked vs Approved vs Rejected Amounts
+    const amountStats = await UserResponse.aggregate([
+      {
+        $match: {
+          'formData.amountRequested': { $exists: true, $ne: null }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalAsked: {
+            $sum: {
+              $convert: {
+                input: {
+                  $replaceAll: {
+                    input: { $toString: "$formData.amountRequested" },
+                    find: ",",
+                    replacement: ""
+                  }
+                },
+                to: "double",
+                onError: 0,
+                onNull: 0
+              }
+            }
+          },
+          totalApproved: {
+            $sum: {
+              $cond: [
+                { $eq: ["$status", "approved"] },
+                {
+                  $convert: {
+                    input: {
+                      $replaceAll: {
+                        input: { $toString: "$formData.amountRequested" },
+                        find: ",",
+                        replacement: ""
+                      }
+                    },
+                    to: "double",
+                    onError: 0,
+                    onNull: 0
+                  }
+                },
+                0
+              ]
+            }
+          },
+          totalRejected: {
+            $sum: {
+              $cond: [
+                { $eq: ["$status", "rejected"] },
+                {
+                  $convert: {
+                    input: {
+                      $replaceAll: {
+                        input: { $toString: "$formData.amountRequested" },
+                        find: ",",
+                        replacement: ""
+                      }
+                    },
+                    to: "double",
+                    onError: 0,
+                    onNull: 0
+                  }
+                },
+                0
+              ]
+            }
+          }
+        }
+      }
+    ]);
+
+    // 4. Total Revenue vs Total Lending (Total Asked)
+    const revenueVsLending = await UserResponse.aggregate([
+      {
+        $match: {
+          'formData.amountRequested': { $exists: true, $ne: null },
+          'formData.monthlyRevenue': { $exists: true, $ne: null }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalRevenue: {
+            $sum: {
+              $convert: {
+                input: {
+                  $replaceAll: {
+                    input: { $toString: "$formData.monthlyRevenue" },
+                    find: ",",
+                    replacement: ""
+                  }
+                },
+                to: "double",
+                onError: 0,
+                onNull: 0
+              }
+            }
+          },
+          totalLending: {
+            $sum: {
+              $convert: {
+                input: {
+                  $replaceAll: {
+                    input: { $toString: "$formData.amountRequested" },
+                    find: ",",
+                    replacement: ""
+                  }
+                },
+                to: "double",
+                onError: 0,
+                onNull: 0
+              }
+            }
+          }
+        }
+      }
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        statusCounts: {
+          total,
+          pending,
+          submitted,
+          approved,
+          rejected
+        },
+        fundingPerDay,
+        amountStats: amountStats[0] || { totalAsked: 0, totalApproved: 0, totalRejected: 0 },
+        revenueVsLending: revenueVsLending[0] || { totalRevenue: 0, totalLending: 0 }
+      }
+    });
+  } catch (error) {
+    console.error('Get dashboard stats error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching dashboard statistics',
+      error: error.message
+    });
+  }
+};
+
+// Get response statistics (Legacy - keeping for backward compatibility)
 exports.getResponseStats = async (req, res) => {
   try {
     const [total, pending, submitted, approved, rejected] = await Promise.all([
