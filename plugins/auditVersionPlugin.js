@@ -182,7 +182,8 @@ function auditVersionPlugin(schema, options) {
   }
 
   // Hook: save (covers both create and update)
-  schema.pre('save', async function(next) {
+  // Use async function to be compatible with other async pre-save hooks
+  schema.pre('save', async function() {
     // For new documents, version starts at 0
     if (this.isNew && (this.version === undefined || this.version === null)) {
       this.version = 0;
@@ -192,8 +193,7 @@ function auditVersionPlugin(schema, options) {
       // Version will be incremented in the audit log creation
       // We'll update it there to avoid race conditions
     }
-
-    next();
+    // No need to call next() or return - async functions work automatically
   });
 
   schema.post('save', function(doc) {
