@@ -1,6 +1,41 @@
 const mongoose = require('mongoose');
 const AuditLog = require('../models/AuditLog');
-const { getAuditUser } = require('../utils/auditContext');
+const { getAuditUser, getAuditRequestInfo } = require('../utils/auditContext');
+
+/**
+ * Calculate the difference between two objects
+ * Returns an object showing what changed: { field: { old: value, new: value } }
+ */
+function calculateChanges(oldData, newData) {
+  if (!oldData) {
+    return null; // No previous state
+  }
+
+  const changes = {};
+
+  // Get all unique keys from both objects
+  const allKeys = new Set([...Object.keys(oldData), ...Object.keys(newData)]);
+  
+  // Remove internal fields that change automatically
+  allKeys.delete('version');
+  allKeys.delete('__v');
+  allKeys.delete('updatedAt');
+
+  for (const key of allKeys) {
+    const oldValue = oldData[key];
+    const newValue = newData[key];
+
+    // Deep comparison for objects/arrays
+    if (JSON.stringify(oldValue) !== JSON.stringify(newValue)) {
+      changes[key] = {
+        old: oldValue,
+        new: newValue
+      };
+    }
+  }
+
+  return Object.keys(changes).length > 0 ? changes : null;
+}
 
 // Track documents that are currently being audited to prevent duplicate logs
 // Key: `${modelName}:${docId}:${operationId}` - ensures one audit per operation
@@ -51,21 +86,45 @@ function auditVersionPlugin(schema, options) {
     // Mark this audit as pending
     pendingAudits.add(auditKey);
     
+    // Capture context BEFORE setImmediate to preserve it
+    const changedByRaw = getAuditUser();
+    const requestInfo = getAuditRequestInfo();
+    
+    // Convert changedBy to ObjectId if it's a valid ObjectId string, otherwise null
+    let changedBy = null;
+    if (changedByRaw && changedByRaw !== 'system') {
+      if (mongoose.Types.ObjectId.isValid(changedByRaw)) {
+        changedBy = new mongoose.Types.ObjectId(changedByRaw);
+      }
+    }
+
     // Use setImmediate to defer execution until after the current event loop
     // This ensures the HTTP response is sent before audit logging happens
     setImmediate(async () => {
       try {
-        // Get the current user from context (capture it now before async context is lost)
-        const changedBy = getAuditUser();
-
         // Prepare the snapshot data
         const docData = doc.toObject ? doc.toObject({ virtuals: false }) : doc;
         const snapshot = { ...docData };
         delete snapshot.version;
         delete snapshot.__v;
 
+        // Get previous version to calculate changes
+        let changes = null;
+        let previousData = null;
+        if (action === 'update') {
+          const lastEntry = await AuditLog.findOne(
+            { modelName, refId: doc._id },
+            { data: 1, version: 1 },
+            { sort: { version: -1 } }
+          ).lean();
+          
+          if (lastEntry && lastEntry.data) {
+            previousData = lastEntry.data;
+            changes = calculateChanges(previousData, snapshot);
+          }
+        }
+
         // Always query audit log for latest version to avoid race conditions
-        // This ensures we get the actual latest version even with concurrent updates
         const lastEntry = await AuditLog.findOne(
           { modelName, refId: doc._id },
           { version: 1 },
@@ -78,15 +137,18 @@ function auditVersionPlugin(schema, options) {
         let retries = 3;
         while (retries > 0) {
           try {
-            const auditEntry = new AuditLog({
-              modelName: modelName,
-              refId: doc._id,
-              version: newVersion,
-              action: action,
-              data: snapshot,
-              changedAt: new Date(),
-              changedBy: changedBy
-            });
+              const auditEntry = new AuditLog({
+                modelName: modelName,
+                refId: doc._id,
+                version: newVersion,
+                action: action,
+                data: snapshot,
+                changedAt: new Date(),
+                changedBy: changedBy, // ObjectId reference or null
+                apiUrl: requestInfo.apiUrl,
+                requestPayload: requestInfo.requestPayload,
+                changes: changes
+              });
 
             await auditEntry.save();
 
@@ -235,15 +297,33 @@ function auditVersionPlugin(schema, options) {
     const modelName = this.model.modelName;
     
     if (deletedDoc) {
+      // Capture context before async operation
+      const changedByRaw = getAuditUser();
+      const requestInfo = getAuditRequestInfo();
+      
+      // Convert changedBy to ObjectId if it's a valid ObjectId string, otherwise null
+      let changedBy = null;
+      if (changedByRaw && changedByRaw !== 'system') {
+        if (mongoose.Types.ObjectId.isValid(changedByRaw)) {
+          changedBy = new mongoose.Types.ObjectId(changedByRaw);
+        }
+      }
+      
       setImmediate(async () => {
         try {
-          const changedBy = getAuditUser();
-          const currentVersion = deletedDoc.version || 0;
-          let newVersion = currentVersion + 1;
+          // Get latest version
+          const lastEntry = await AuditLog.findOne(
+            { modelName, refId: deletedDoc._id },
+            { version: 1 },
+            { sort: { version: -1 } }
+          ).lean();
+          
+          let newVersion = lastEntry ? lastEntry.version + 1 : 1;
 
           const docData = deletedDoc.toObject ? deletedDoc.toObject() : deletedDoc;
           const snapshot = { ...docData };
           delete snapshot.version;
+          delete snapshot.__v;
 
           // Retry logic for duplicate key errors
           let retries = 3;
@@ -256,7 +336,10 @@ function auditVersionPlugin(schema, options) {
                 action: 'delete',
                 data: snapshot,
                 changedAt: new Date(),
-                changedBy: changedBy
+                changedBy: changedBy, // ObjectId reference or null
+                apiUrl: requestInfo.apiUrl,
+                requestPayload: requestInfo.requestPayload,
+                changes: null // No changes for delete
               });
 
               await auditEntry.save();
@@ -288,6 +371,7 @@ function auditVersionPlugin(schema, options) {
         modelName: this.modelName,
         refId: refId
       })
+        .populate('changedBy', 'email name role')
         .sort({ version: 1 })
         .lean();
     } catch (error) {
@@ -308,7 +392,9 @@ function auditVersionPlugin(schema, options) {
         modelName: this.modelName,
         refId: refId,
         version: versionNumber
-      }).lean();
+      })
+        .populate('changedBy', 'email name role')
+        .lean();
     } catch (error) {
       console.error(`[AuditPlugin] getVersion error:`, error);
       throw error;
@@ -326,6 +412,7 @@ function auditVersionPlugin(schema, options) {
         modelName: this.modelName,
         refId: refId
       })
+        .populate('changedBy', 'email name role')
         .sort({ version: -1 })
         .lean();
     } catch (error) {

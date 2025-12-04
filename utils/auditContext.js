@@ -24,8 +24,37 @@ function setAuditUser(userIdOrEmail) {
     store.currentUser = userIdOrEmail || 'system';
   } else {
     // If no store exists, create one (shouldn't happen in normal flow)
-    auditStorage.enterWith({ currentUser: userIdOrEmail || 'system' });
+    auditStorage.enterWith({ 
+      currentUser: userIdOrEmail || 'system',
+      apiUrl: null,
+      requestPayload: null
+    });
   }
+}
+
+/**
+ * Set request information for audit logging
+ * @param {string} apiUrl - API endpoint URL
+ * @param {object} requestPayload - Request body/payload
+ */
+function setAuditRequestInfo(apiUrl, requestPayload) {
+  const store = auditStorage.getStore();
+  if (store) {
+    store.apiUrl = apiUrl;
+    store.requestPayload = requestPayload;
+  }
+}
+
+/**
+ * Get request information for audit logging
+ * @returns {object} Object with apiUrl and requestPayload
+ */
+function getAuditRequestInfo() {
+  const store = auditStorage.getStore();
+  return store ? {
+    apiUrl: store.apiUrl || null,
+    requestPayload: store.requestPayload || null
+  } : { apiUrl: null, requestPayload: null };
 }
 
 /**
@@ -52,6 +81,8 @@ function runWithAuditContext(userIdOrEmail, fn) {
 module.exports = {
   setAuditUser,
   getAuditUser,
+  setAuditRequestInfo,
+  getAuditRequestInfo,
   runWithAuditContext,
   auditStorage
 };

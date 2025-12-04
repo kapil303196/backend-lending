@@ -1,4 +1,4 @@
-const { setAuditUser, runWithAuditContext } = require('../utils/auditContext');
+const { setAuditUser, setAuditRequestInfo, runWithAuditContext } = require('../utils/auditContext');
 
 /**
  * Express Middleware: Set Audit User
@@ -37,6 +37,11 @@ function auditMiddleware(req, res, next) {
 
   // Set the audit user for this request
   setAuditUser(userId);
+
+  // Set request information (URL and payload) for audit logging
+  const apiUrl = `${req.method} ${req.originalUrl || req.url}`;
+  const requestPayload = req.body && Object.keys(req.body).length > 0 ? req.body : null;
+  setAuditRequestInfo(apiUrl, requestPayload);
 
   next();
 }

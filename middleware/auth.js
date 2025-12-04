@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const { setAuditUser, setAuditRequestInfo } = require('../utils/auditContext');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 
@@ -43,9 +44,22 @@ exports.authenticate = async (req, res, next) => {
     // Attach user to request
     req.user = {
       id: user._id,
+      _id: user._id,
       email: user.email,
-      role: user.role
+      role: user.role,
+      name: user.name
     };
+    
+    // Update audit context with authenticated user
+    setAuditUser(user._id.toString());
+    
+    // Also update request info if not already set
+    if (!req._auditRequestInfoSet) {
+      const apiUrl = `${req.method} ${req.originalUrl || req.url}`;
+      const requestPayload = req.body && Object.keys(req.body).length > 0 ? req.body : null;
+      setAuditRequestInfo(apiUrl, requestPayload);
+      req._auditRequestInfoSet = true;
+    }
     
     next();
     

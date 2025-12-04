@@ -50,14 +50,34 @@ const auditLogSchema = new mongoose.Schema({
     index: true
   },
 
-  // Who made this change (can be userId, email, or any identifier)
+  // Who made this change (reference to User model)
   changedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null,
+    index: true
+  },
+
+  // API endpoint that triggered this change
+  apiUrl: {
     type: String,
+    default: null
+  },
+
+  // Request payload/body that triggered this change
+  requestPayload: {
+    type: mongoose.Schema.Types.Mixed,
+    default: null
+  },
+
+  // What fields changed (diff between previous and current state)
+  changes: {
+    type: mongoose.Schema.Types.Mixed,
     default: null
   }
 }, {
   timestamps: false, // We use changedAt instead
-  collection: 'audit_logs' // Explicit collection name
+  collection: 'auditlogs' // Explicit collection name
 });
 
 // Compound index for efficient queries: modelName + refId + version
