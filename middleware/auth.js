@@ -86,3 +86,17 @@ exports.requireAdmin = (req, res, next) => {
   next();
 };
 
+/**
+ * Middleware to check if user is dealer
+ */
+exports.requireDealer = (req, res, next) => {
+  if (req.user.role !== 'dealer') {
+    return res.status(403).json({
+      success: false,
+      message: 'Access denied. Dealer privileges required.'
+    });
+  }
+  next();
+};
+
+
