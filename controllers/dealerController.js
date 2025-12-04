@@ -2,19 +2,30 @@ const UserResponse = require('../models/UserResponse');
 const DealerOffer = require('../models/DealerOffer');
 
 /**
- * Get all rejected offers visible to the current dealer.
+ * Get all rejected offers visible to the current dealer with filtering and pagination.
  * Dealers can only SEE rejected offers; they cannot change the main offer/response.
  */
 exports.getRejectedOffers = async (req, res) => {
   try {
     const dealerId = req.user.id;
+    const { 
+      page = 1, 
+      limit = 20,
+      internalStatus 
+    } = req.query;
 
-    // Find all rejected responses
-    const responses = await UserResponse.find({ status: 'rejected' })
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
+
+    // First, get all rejected responses
+    let responsesQuery = UserResponse.find({ status: 'rejected' })
       .sort({ createdAt: -1 })
       .populate('mcaId');
 
-    const responseIds = responses.map(r => r._id);
+    // Get all responses first to check dealer metadata
+    const allResponses = await responsesQuery.exec();
+    const responseIds = allResponses.map(r => r._id);
 
     // Fetch existing dealer metadata for these responses
     const dealerOffers = await DealerOffer.find({
@@ -27,7 +38,8 @@ exports.getRejectedOffers = async (req, res) => {
       dealerMap.set(offer.userResponseId.toString(), offer);
     });
 
-    const data = responses.map(r => {
+    // Map responses with dealer metadata
+    let data = allResponses.map(r => {
       const meta = dealerMap.get(r._id.toString());
       return {
         response: r,
@@ -42,9 +54,32 @@ exports.getRejectedOffers = async (req, res) => {
       };
     });
 
+    // Filter by internal status if provided
+    if (internalStatus) {
+      if (internalStatus === 'none' || internalStatus === '') {
+        // Show only offers without dealer metadata or without status
+        data = data.filter(item => !item.dealerMeta || !item.dealerMeta.internalStatus);
+      } else {
+        // Show only offers with matching internal status
+        data = data.filter(item => item.dealerMeta?.internalStatus === internalStatus);
+      }
+    }
+
+    // Get total count before pagination
+    const total = data.length;
+
+    // Apply pagination
+    const paginatedData = data.slice(skip, skip + limitNum);
+
     res.json({
       success: true,
-      data
+      data: paginatedData,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        pages: Math.ceil(total / limitNum)
+      }
     });
   } catch (error) {
     console.error('Dealer getRejectedOffers error:', error);
