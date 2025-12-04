@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const auditVersionPlugin = require('../plugins/auditVersionPlugin');
 
 const userResponseSchema = new mongoose.Schema({
   // Reference to the MCA record
@@ -94,6 +95,9 @@ userResponseSchema.pre('save', async function() {
     this.submittedAt = new Date();
   }
 });
+
+// Apply audit version plugin
+userResponseSchema.plugin(auditVersionPlugin);
 
 module.exports = mongoose.model('UserResponse', userResponseSchema);
 

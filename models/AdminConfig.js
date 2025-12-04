@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const auditVersionPlugin = require('../plugins/auditVersionPlugin');
 
 const adminConfigSchema = new mongoose.Schema({
   // Singleton identifier
@@ -31,6 +32,9 @@ const adminConfigSchema = new mongoose.Schema({
     viewSensitiveInfo: { type: Boolean, default: true } // e.g. SSN, DOB
   }
 }, { timestamps: true });
+
+// Apply audit version plugin
+adminConfigSchema.plugin(auditVersionPlugin);
 
 module.exports = mongoose.model('AdminConfig', adminConfigSchema);
 

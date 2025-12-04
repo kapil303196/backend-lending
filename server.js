@@ -14,6 +14,7 @@ const addressRoutes = require('./routes/addressRoutes');
 const authRoutes = require('./routes/authRoutes');
 const adminConfigRoutes = require('./routes/adminConfigRoutes');
 const dealerRoutes = require('./routes/dealerRoutes');
+const { auditMiddleware } = require('./middleware/auditMiddleware');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -29,6 +30,11 @@ app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
   next();
 });
+
+// Audit middleware - tracks user context for audit logging
+// This should be applied globally to capture user context for all operations
+// It works even if req.user is not set (uses 'system' as fallback)
+app.use(auditMiddleware);
 
 // Swagger API Documentation
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {

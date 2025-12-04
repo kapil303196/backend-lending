@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const auditVersionPlugin = require('../plugins/auditVersionPlugin');
 
 const mcaSchema = new mongoose.Schema({
   // Unique identifier for sharing with users
@@ -71,6 +72,9 @@ mcaSchema.query.active = function() {
 //     this.where({ isActive: true });
 //   }
 // });
+
+// Apply audit version plugin
+mcaSchema.plugin(auditVersionPlugin);
 
 module.exports = mongoose.model('MCA', mcaSchema);
 

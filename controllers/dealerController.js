@@ -49,7 +49,8 @@ exports.getRejectedOffers = async (req, res) => {
           internalStatusUpdatedAt: meta.internalStatusUpdatedAt,
           internalStatusUpdatedByEmail: meta.internalStatusUpdatedByEmail,
           internalStatusUpdatedByName: meta.internalStatusUpdatedByName,
-          notes: meta.notes
+          notes: meta.notes,
+          statusHistory: meta.statusHistory || []
         } : null
       };
     });
@@ -121,6 +122,26 @@ exports.upsertDealerOffer = async (req, res) => {
     const update = {};
 
     if (internalStatus) {
+      // Check if status is actually changing
+      const existingOffer = await DealerOffer.findOne({
+        dealerId,
+        userResponseId: userResponse._id
+      });
+
+      // Only add to history if status is different
+      if (!existingOffer || existingOffer.internalStatus !== internalStatus) {
+        if (!update.$push) {
+          update.$push = {};
+        }
+        update.$push.statusHistory = {
+          status: internalStatus,
+          changedAt: new Date(),
+          changedBy: dealerId,
+          changedByEmail: req.user.email,
+          changedByName: req.user.name || ''
+        };
+      }
+
       update.internalStatus = internalStatus;
       update.internalStatusUpdatedAt = new Date();
       update.internalStatusUpdatedBy = dealerId;
@@ -129,13 +150,14 @@ exports.upsertDealerOffer = async (req, res) => {
     }
 
     if (note && note.trim()) {
-      update.$push = {
-        notes: {
-          text: note.trim(),
-          createdBy: dealerId,
-          createdByEmail: req.user.email,
-          createdByName: req.user.name || ''
-        }
+      if (!update.$push) {
+        update.$push = {};
+      }
+      update.$push.notes = {
+        text: note.trim(),
+        createdBy: dealerId,
+        createdByEmail: req.user.email,
+        createdByName: req.user.name || ''
       };
     }
 

@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const auditVersionPlugin = require('../plugins/auditVersionPlugin');
 
 const dealerOfferSchema = new mongoose.Schema({
   dealerId: {
@@ -38,6 +39,24 @@ const dealerOfferSchema = new mongoose.Schema({
   internalStatusUpdatedByEmail: String,
   internalStatusUpdatedByName: String,
 
+  // History of all internal status changes
+  statusHistory: [{
+    status: {
+      type: String,
+      required: true
+    },
+    changedAt: {
+      type: Date,
+      default: Date.now
+    },
+    changedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    changedByEmail: String,
+    changedByName: String
+  }],
+
   // Free-form notes that dealer can maintain internally
   notes: [{
     text: {
@@ -60,6 +79,9 @@ const dealerOfferSchema = new mongoose.Schema({
 });
 
 dealerOfferSchema.index({ dealerId: 1, userResponseId: 1 }, { unique: true });
+
+// Apply audit version plugin
+dealerOfferSchema.plugin(auditVersionPlugin);
 
 module.exports = mongoose.model('DealerOffer', dealerOfferSchema);
 

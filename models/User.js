@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
+const auditVersionPlugin = require('../plugins/auditVersionPlugin');
 
 const userSchema = new mongoose.Schema({
   email: {
@@ -72,6 +73,9 @@ userSchema.methods.toJSON = function() {
   delete obj.password;
   return obj;
 };
+
+// Apply audit version plugin
+userSchema.plugin(auditVersionPlugin);
 
 module.exports = mongoose.model('User', userSchema);
 
