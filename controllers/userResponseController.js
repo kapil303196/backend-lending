@@ -1,5 +1,7 @@
 const UserResponse = require('../models/UserResponse');
 const MCA = require('../models/MCA');
+const User = require('../models/User');
+const emailService = require('../services/emailService');
 
 // Get all user responses (with pagination and filters)
 exports.getAllResponses = async (req, res) => {
@@ -157,6 +159,14 @@ exports.createResponse = async (req, res) => {
       });
     }
     
+    // Validate email is provided
+    if (!responseData.formData?.businessEmail) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is required in formData'
+      });
+    }
+    
     // Find the MCA record
     const mca = await MCA.findOne({ uniqueId });
     
@@ -203,10 +213,67 @@ exports.createResponse = async (req, res) => {
     mca.userResponses.push(userResponse._id);
     await mca.save();
     
+    // Generate temporary password
+    const tempPassword = this.generateTemporaryPassword();
+    
+    // Create user account (or update if exists)
+    let user;
+    let isNewUser = false;
+    
+    const existingUser = await User.findOne({ email: responseData.formData.businessEmail.toLowerCase() });
+    
+    if (existingUser) {
+      // Add new application to existing user's applications array
+      if (!existingUser.userResponseIds.includes(userResponse._id)) {
+        existingUser.userResponseIds.push(userResponse._id);
+      }
+      existingUser.name = responseData.formData.ownerName || responseData.formData.businessName || existingUser.name;
+      existingUser.businessName = responseData.formData.businessName || existingUser.businessName;
+      existingUser.phone = responseData.formData.phone || existingUser.phone;
+      await existingUser.save();
+      user = existingUser;
+      console.log(`✅ Added new application to existing user account for ${responseData.formData.businessEmail}`);
+    } else {
+      // Create new user account
+      user = new User({
+        email: responseData.formData.businessEmail.toLowerCase(),
+        password: tempPassword,
+        name: responseData.formData.ownerName || responseData.formData.businessName || 'User',
+        businessName: responseData.formData.businessName || '',
+        phone: responseData.formData.phone || '',
+        role: 'user',
+        userResponseIds: [userResponse._id],
+        isFirstLogin: true
+      });
+      
+      await user.save();
+      isNewUser = true;
+      console.log(`✅ Created new user account for ${responseData.formData.businessEmail}`);
+    }
+    
+    // Send welcome email with credentials (only for new users)
+    if (isNewUser) {
+      emailService.sendWelcomeEmail(responseData.formData.businessEmail, {
+        name: responseData.formData.businessName || responseData.formData.ownerName || 'Valued Customer',
+        email: responseData.formData.businessEmail,
+        password: tempPassword,
+        uniqueId: uniqueId
+      }).then(result => {
+        console.log(`✅ Welcome email sent successfully to ${responseData.formData.email}`);
+      }).catch(error => {
+        console.error(`❌ Failed to send welcome email to ${responseData.formData.email}:`, error.message);
+        // Don't fail the request if email fails - log it for admin review
+      });
+    }
+    
     res.status(201).json({
       success: true,
       message: 'Response submitted successfully',
-      data: userResponse
+      data: {
+        userResponse,
+        userCreated: isNewUser,
+        userId: user._id
+      }
     });
   } catch (error) {
     console.error('Create response error:', error);
@@ -311,7 +378,7 @@ exports.updateResponseStatus = async (req, res) => {
       id,
       { status, updatedAt: new Date() },
       { new: true }
-    );
+    ).populate('mcaId');
     
     if (!response) {
       return res.status(404).json({
@@ -319,6 +386,27 @@ exports.updateResponseStatus = async (req, res) => {
         message: 'Response not found'
       });
     }
+    
+    // Send status update email (async, don't block response)
+    // if (response.formData?.email) {
+    //   const statusMessages = {
+    //     approved: 'Congratulations! Your application has been approved. Our team will contact you shortly with next steps.',
+    //     rejected: 'We regret to inform you that your application has been rejected. Please contact our support team for more information.',
+    //     pending: 'Your application is currently under review. We will notify you once a decision has been made.',
+    //     submitted: 'Your application has been successfully submitted and is being processed.'
+    //   };
+
+    //   emailService.sendStatusUpdateEmail(response.formData.email, {
+    //     name: response.formData.businessName || response.formData.ownerName || 'Valued Customer',
+    //     uniqueId: response.uniqueId,
+    //     status: status,
+    //     message: statusMessages[status]
+    //   }).then(result => {
+    //     console.log(`✅ Status update email sent to ${response.formData.email}`);
+    //   }).catch(error => {
+    //     console.error(`❌ Failed to send status update email:`, error.message);
+    //   });
+    // }
     
     res.json({
       success: true,
@@ -561,3 +649,23 @@ exports.getResponseStats = async (req, res) => {
   }
 };
 
+// Helper function to generate temporary password
+exports.generateTemporaryPassword = () => {
+  const length = 12;
+  const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*';
+  let password = '';
+  
+  // Ensure at least one of each type
+  password += 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'[Math.floor(Math.random() * 26)]; // Uppercase
+  password += 'abcdefghijklmnopqrstuvwxyz'[Math.floor(Math.random() * 26)]; // Lowercase
+  password += '0123456789'[Math.floor(Math.random() * 10)]; // Number
+  password += '!@#$%^&*'[Math.floor(Math.random() * 8)]; // Special char
+  
+  // Fill the rest randomly
+  for (let i = password.length; i < length; i++) {
+    password += charset[Math.floor(Math.random() * charset.length)];
+  }
+  
+  // Shuffle the password
+  return password.split('').sort(() => Math.random() - 0.5).join('');
+};

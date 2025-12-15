@@ -29,7 +29,30 @@ const userSchema = new mongoose.Schema({
     default: 'admin'
   },
   
+  // Reference to their applications/responses (can have multiple)
+  userResponseIds: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'UserResponse'
+  }],
+  
+  // Business information (from application)
+  businessName: {
+    type: String,
+    default: ''
+  },
+  
+  phone: {
+    type: String,
+    default: ''
+  },
+  
   isActive: {
+    type: Boolean,
+    default: true
+  },
+  
+  // Track if this is their first login (to prompt password change)
+  isFirstLogin: {
     type: Boolean,
     default: true
   },
