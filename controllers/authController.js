@@ -142,3 +142,55 @@ exports.logout = async (req, res) => {
   });
 };
 
+/**
+ * Get user's applications/responses data (all of them)
+ */
+exports.getUserApplication = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).populate({
+      path: 'userResponseIds',
+      populate: {
+        path: 'mcaId'
+      },
+      options: { sort: { createdAt: -1 } } // Most recent first
+    });
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+    
+    if (!user.userResponseIds || user.userResponseIds.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'No applications found for this user'
+      });
+    }
+    
+    res.json({
+      success: true,
+      data: {
+        applications: user.userResponseIds, // Array of all applications
+        user: {
+          id: user._id,
+          email: user.email,
+          name: user.name,
+          businessName: user.businessName,
+          phone: user.phone,
+          isFirstLogin: user.isFirstLogin
+        }
+      }
+    });
+    
+  } catch (error) {
+    console.error('Get user applications error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching applications',
+      error: error.message
+    });
+  }
+};
+

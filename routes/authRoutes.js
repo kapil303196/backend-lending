@@ -91,5 +91,22 @@ router.get('/verify', authenticate, authController.verifyToken);
  */
 router.post('/logout', authenticate, authController.logout);
 
+/**
+ * @swagger
+ * /api/auth/my-application:
+ *   get:
+ *     tags: [Authentication]
+ *     summary: Get user's application
+ *     description: Get the authenticated user's application/response data
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Application data retrieved successfully
+ *       404:
+ *         description: No application found for this user
+ */
+router.get('/my-application', authenticate, authController.getUserApplication);
+
 module.exports = router;
 
