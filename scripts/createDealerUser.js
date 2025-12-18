@@ -16,7 +16,7 @@ const createDealerUser = async () => {
     await mongoose.connect(MONGODB_URI);
     console.log('✅ Connected to MongoDB');
 
-    const email = 'dealer@logicspark.io';
+    const email = 'mcalending@ebizfunding.com';
     const password = 'Test@123';
 
     // Check if user already exists

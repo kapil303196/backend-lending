@@ -82,11 +82,12 @@ exports.getMCAById = async (req, res) => {
           message: 'MCA record not found'
         });
       }
-      
-      return res.json({
-        success: true,
-        data: record
-      });
+
+      // Normalize any "llc" casing to "LLC"
+      if (record.company) {
+        record.company = record.company.replace(/llc/gi, 'LLC');
+      }
+      return res.json({ success: true, data: record });
     }
     
     const record = await query;
