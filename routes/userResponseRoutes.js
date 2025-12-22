@@ -1,6 +1,6 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const userResponseController = require('../controllers/userResponseController');
+const userResponseController = require("../controllers/userResponseController");
 
 /**
  * @swagger
@@ -51,7 +51,7 @@ const userResponseController = require('../controllers/userResponseController');
  *       200:
  *         description: List of user responses
  */
-router.get('/', userResponseController.getAllResponses);
+router.get("/", userResponseController.getAllResponses);
 
 /**
  * @swagger
@@ -64,7 +64,7 @@ router.get('/', userResponseController.getAllResponses);
  *       200:
  *         description: Dashboard statistics
  */
-router.get('/dashboard-stats', userResponseController.getDashboardStats);
+router.get("/dashboard-stats", userResponseController.getDashboardStats);
 
 /**
  * @swagger
@@ -77,7 +77,7 @@ router.get('/dashboard-stats', userResponseController.getDashboardStats);
  *       200:
  *         description: Response statistics
  */
-router.get('/stats', userResponseController.getResponseStats);
+router.get("/stats", userResponseController.getResponseStats);
 
 /**
  * @swagger
@@ -99,7 +99,7 @@ router.get('/stats', userResponseController.getResponseStats);
  *       404:
  *         description: MCA record not found
  */
-router.get('/mca/:id', userResponseController.getResponsesByMCA);
+router.get("/mca/:id", userResponseController.getResponsesByMCA);
 
 /**
  * @swagger
@@ -120,7 +120,7 @@ router.get('/mca/:id', userResponseController.getResponsesByMCA);
  *       404:
  *         description: Response not found
  */
-router.get('/:id', userResponseController.getResponseById);
+router.get("/:id", userResponseController.getResponseById);
 
 /**
  * @swagger
@@ -185,7 +185,7 @@ router.get('/:id', userResponseController.getResponseById);
  *       404:
  *         description: MCA record not found
  */
-router.post('/', userResponseController.createResponse);
+router.post("/", userResponseController.createResponse);
 
 /**
  * @swagger
@@ -212,7 +212,7 @@ router.post('/', userResponseController.createResponse);
  *       404:
  *         description: Response not found
  */
-router.put('/:id', userResponseController.updateResponse);
+router.put("/:id", userResponseController.updateResponse);
 
 /**
  * @swagger
@@ -239,7 +239,7 @@ router.put('/:id', userResponseController.updateResponse);
  *       404:
  *         description: Response not found
  */
-router.patch('/:id', userResponseController.updateResponse);
+router.patch("/:id", userResponseController.updateResponse);
 
 /**
  * @swagger
@@ -275,15 +275,15 @@ router.patch('/:id', userResponseController.updateResponse);
  *       404:
  *         description: Response not found
  */
-router.patch('/:id/status', userResponseController.updateResponseStatus);
+router.patch("/:id/status", userResponseController.updateResponseStatus);
 
 /**
  * @swagger
  * /api/responses/{id}:
  *   delete:
  *     tags: [User Responses]
- *     summary: Delete user response
- *     description: Delete a user response and remove it from the MCA's userResponses array
+ *     summary: Delete user response (soft delete)
+ *     description: Soft delete a user response by setting isActive to false. The record remains in the database but won't appear in queries.
  *     parameters:
  *       - in: path
  *         name: id
@@ -293,10 +293,11 @@ router.patch('/:id/status', userResponseController.updateResponseStatus);
  *     responses:
  *       200:
  *         description: Response deleted successfully
+ *       400:
+ *         description: Response is already deleted
  *       404:
  *         description: Response not found
  */
-router.delete('/:id', userResponseController.deleteResponse);
+router.delete("/:id", userResponseController.deleteResponse);
 
 module.exports = router;
-
