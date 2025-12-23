@@ -66,43 +66,36 @@ exports.getMCAById = async (req, res) => {
   try {
     const { id } = req.params;
     const { includeResponses = 'true' } = req.query;
-    
-    let query = MCA.findByIdOrUniqueId(id);
-    
-    if (includeResponses === 'true') {
-      query = MCA.findByIdOrUniqueId(id);
-      const record = await query;
-      if (record) {
-        await record.populate('userResponses');
-      }
-      
-      if (!record) {
-        return res.status(404).json({
-          success: false,
-          message: 'MCA record not found'
-        });
-      }
 
-      // Normalize any "llc" casing to "LLC"
-      if (record.company) {
-        record.company = record.company.replace(/llc/gi, 'LLC');
-      }
-      return res.json({ success: true, data: record });
-    }
-    
-    const record = await query;
-    
+    // Treat multiple truthy values as a request to include responses
+    const include =
+      typeof includeResponses === 'string'
+        ? ['true', '1', 'yes', 'y'].includes(includeResponses.toLowerCase())
+        : Boolean(includeResponses);
+
+    const record = await MCA.findByIdOrUniqueId(id);
+
     if (!record) {
       return res.status(404).json({
         success: false,
         message: 'MCA record not found'
       });
     }
-    
-    res.json({
-      success: true,
-      data: record
-    });
+
+    if (include) {
+      try {
+        await record.populate('userResponses');
+      } catch (populateErr) {
+        console.error('Populate userResponses error:', populateErr);
+      }
+    }
+
+    // Normalize any "llc" casing to "LLC"
+    if (record.company) {
+      record.company = record.company.replace(/llc/gi, 'LLC');
+    }
+
+    res.json({ success: true, data: record });
   } catch (error) {
     console.error('Get MCA by ID error:', error);
     res.status(500).json({

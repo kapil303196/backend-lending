@@ -59,6 +59,39 @@ function toCamelCase(str) {
         .join("");
 }
 
+// Clean and normalize values for common columns from the new dataset
+function normalizeValue(key, value) {
+    if (value === undefined || value === null) return "";
+
+    if (typeof value === "string") {
+        const trimmed = value.trim();
+        const lower = trimmed.toLowerCase();
+        if (lower === "undefined" || lower === "unknown") return "";
+
+        if (key === "revenue") {
+            const num = parseFloat(trimmed.replace(/[^0-9.-]/g, ""));
+            return Number.isFinite(num) ? num : "";
+        }
+
+        if (key === "phoneNumber") {
+            const digits = trimmed.replace(/\D+/g, "");
+            return digits || "";
+        }
+
+        if (key === "sicCode") {
+            const digits = trimmed.replace(/[^\d]/g, "");
+            return digits || trimmed;
+        }
+
+        // Keep ZIP as a trimmed string; preserves leading zeros and suffixes
+        if (key === "zip") return trimmed;
+
+        return trimmed;
+    }
+
+    return value;
+}
+
 function transformRecord(record, headers) {
     const newRecord = {};
     
@@ -72,19 +105,8 @@ function transformRecord(record, headers) {
     const normalizedHeaders = headers.map(h => toCamelCase(h));
     
     for (const key of normalizedHeaders) {
-        let value = recordMap[key];
-        
-        // Clean values: "Undefined", "Unknown", undefined, null -> ""
-        let cleanValue = value;
-        if (cleanValue === undefined || cleanValue === null) {
-            cleanValue = "";
-        } else if (typeof cleanValue === 'string') {
-            const lower = cleanValue.toLowerCase().trim();
-            if (lower === 'undefined' || lower === 'unknown') {
-                cleanValue = "";
-            }
-        }
-        newRecord[key] = cleanValue;
+        const value = recordMap[key];
+        newRecord[key] = normalizeValue(key, value);
     }
     
     // Generate uniqueId if missing
