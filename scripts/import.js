@@ -19,7 +19,7 @@ const crypto = require('crypto');
 const MONGO_URI = process.env.MONGODB_URI//"mongodb+srv://admin:Kapil%403110.@cluster0.bmbvy.mongodb.net/efilebusiness?retryWrites=true&w=majority";
 const MONGO_DB = process.env.MONGO_DB//"efilebusiness";
 const COLLECTION_NAME = process.env.COLLECTION_NAME//"data";
-const INPUT_CSV = "files/data-24-nov.xlsx";
+const INPUT_CSV = "files/data-23-dec.xlsx";
 console.log(MONGO_URI)
 
 // Tune these if needed (higher = faster until DB/network bottleneck)
@@ -199,6 +199,39 @@ async function run() {
     // Pre-compute normalized headers if we have them
     const normalizedHeaders = allHeaders.map(h => toCamelCase(h));
 
+    // Clean and normalize values for common columns from the new dataset
+    function normalizeValue(key, value) {
+        if (value === undefined || value === null) return "";
+
+        if (typeof value === "string") {
+            const trimmed = value.trim();
+            const lower = trimmed.toLowerCase();
+            if (lower === "undefined" || lower === "unknown") return "";
+
+            if (key === "revenue") {
+                const num = parseFloat(trimmed.replace(/[^0-9.-]/g, ""));
+                return Number.isFinite(num) ? num : "";
+            }
+
+            if (key === "phoneNumber") {
+                const digits = trimmed.replace(/\D+/g, "");
+                return digits || "";
+            }
+
+            if (key === "sicCode") {
+                const digits = trimmed.replace(/[^\d]/g, "");
+                return digits || trimmed;
+            }
+
+            // Keep ZIP as a trimmed string; preserves leading zeros and suffixes
+            if (key === "zip") return trimmed;
+
+            return trimmed;
+        }
+
+        return value;
+    }
+
     function transformRecord(record) {
         const newRecord = {};
 
@@ -213,19 +246,8 @@ async function run() {
         }
 
         for (const key of keysToUse) {
-            let value = recordMap[key];
-
-            // 2. Clean values: "Undefined", "Unknown", undefined, null -> ""
-            let cleanValue = value;
-            if (cleanValue === undefined || cleanValue === null) {
-                cleanValue = "";
-            } else if (typeof cleanValue === 'string') {
-                const lower = cleanValue.toLowerCase().trim();
-                if (lower === 'undefined' || lower === 'unknown') {
-                    cleanValue = "";
-                }
-            }
-            newRecord[key] = cleanValue;
+            const value = recordMap[key];
+            newRecord[key] = normalizeValue(key, value);
         }
         // 3. Generate uniqueId if missing
         if (!newRecord.uniqueId) {
