@@ -26,7 +26,7 @@ Add these to your `.env` file:
 # Email Service Configuration (Gmail)
 EMAIL_USER=your-email@gmail.com
 EMAIL_PASSWORD=xxxx-xxxx-xxxx-xxxx  # Your 16-char App Password
-EMAIL_FROM_NAME=LogicSpark MCA
+EMAIL_FROM_NAME=Heroic Funding
 
 # Application URLs
 FRONTEND_URL=http://localhost:5173
@@ -45,7 +45,7 @@ npm run test-email
 
 ### 1. Welcome Email
 **Sent when:** User submits application  
-**Subject:** 🎉 Welcome to LogicSpark MCA - Your Account Details  
+**Subject:** 🎉 Welcome to Heroic Funding - Your Account Details  
 **Contains:**
 - User's name and greeting
 - Login email
@@ -168,7 +168,7 @@ Message ID: <12345@gmail.com>
 
 ### Issue: Emails going to spam
 **Solutions:**
-- Use a professional "from" name (already set as "LogicSpark MCA")
+- Use a professional "from" name (already set as "Heroic Funding")
 - Don't send too many emails too quickly
 - Recipients should add your email to contacts
 - For production, consider using a custom domain
@@ -218,7 +218,7 @@ Add an `<img>` tag in the header section of each template:
 ```html
 <div class="header">
     <img src="https://your-domain.com/logo.png" alt="Logo" style="max-width: 150px; margin-bottom: 20px;">
-    <h1>🎉 Welcome to LogicSpark MCA</h1>
+    <h1>🎉 Welcome to Heroic Funding</h1>
 </div>
 ```
 

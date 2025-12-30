@@ -17,7 +17,7 @@ EMAIL_PROVIDER=gmail
 EMAIL_USER=your-email@gmail.com
 EMAIL_PASSWORD=xxxx-xxxx-xxxx-xxxx
 EMAIL_FROM=your-email@gmail.com
-EMAIL_FROM_NAME=LogicSpark MCA
+EMAIL_FROM_NAME=Heroic Funding
 FRONTEND_URL=http://localhost:5173
 SUPPORT_EMAIL=support@logicspark.com
 
@@ -35,7 +35,7 @@ npm run test-email
 EMAIL_PROVIDER=sendgrid
 SENDGRID_API_KEY=SG.xxxxxxxxxxxxx
 EMAIL_FROM=noreply@yourdomain.com
-EMAIL_FROM_NAME=LogicSpark MCA
+EMAIL_FROM_NAME=Heroic Funding
 FRONTEND_URL=http://localhost:5173
 SUPPORT_EMAIL=support@logicspark.com
 
@@ -47,7 +47,7 @@ npm run test-email
 
 ### 1. Welcome Email (Sent on Application Submit)
 ```
-Subject: 🎉 Welcome to LogicSpark MCA - Your Account Details
+Subject: 🎉 Welcome to Heroic Funding - Your Account Details
 
 Contains:
 - User's name

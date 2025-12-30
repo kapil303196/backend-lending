@@ -41,7 +41,7 @@ Add these lines to `c:\LogicSpark\MCA\backend-lending\.env`:
 # Email Service Configuration (Gmail)
 EMAIL_USER=your-email@gmail.com
 EMAIL_PASSWORD=xxxx-xxxx-xxxx-xxxx
-EMAIL_FROM_NAME=LogicSpark MCA
+EMAIL_FROM_NAME=Heroic Funding
 
 # Application URLs
 FRONTEND_URL=http://localhost:5173
@@ -68,19 +68,19 @@ This interactive tool will:
 
 ### 1. Welcome Email
 ```
-From: LogicSpark MCA <your-email@gmail.com>
+From: Heroic Funding <your-email@gmail.com>
 To: user@example.com
-Subject: 🎉 Welcome to LogicSpark MCA - Your Account Details
+Subject: 🎉 Welcome to Heroic Funding - Your Account Details
 
 Content:
 ┌─────────────────────────────────────┐
-│   🎉 Welcome to LogicSpark MCA      │
+│   🎉 Welcome to Heroic Funding      │
 │   Your account has been created     │
 └─────────────────────────────────────┘
 
 Hello John Doe,
 
-Thank you for choosing LogicSpark MCA...
+Thank you for choosing Heroic Funding...
 
 🔐 Your Login Credentials
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -101,9 +101,9 @@ Application ID: MCA-12345
 
 ### 2. Application Confirmation
 ```
-From: LogicSpark MCA <your-email@gmail.com>
+From: Heroic Funding <your-email@gmail.com>
 To: user@example.com
-Subject: ✅ Application Submitted Successfully - LogicSpark MCA
+Subject: ✅ Application Submitted Successfully - Heroic Funding
 
 Content:
 ┌─────────────────────────────────────┐
@@ -126,7 +126,7 @@ Submitted On: December 15, 2025
 
 ### 3. Status Update Email
 ```
-From: LogicSpark MCA <your-email@gmail.com>
+From: Heroic Funding <your-email@gmail.com>
 To: user@example.com
 Subject: ✅ Application Status Update - APPROVED
 
@@ -230,7 +230,7 @@ Message ID: <abc123@gmail.com>
 |----------|-------------|---------|
 | `EMAIL_USER` | Your Gmail address | `john@gmail.com` |
 | `EMAIL_PASSWORD` | Gmail App Password (16 chars) | `xxxx-xxxx-xxxx-xxxx` |
-| `EMAIL_FROM_NAME` | Sender name in emails | `LogicSpark MCA` |
+| `EMAIL_FROM_NAME` | Sender name in emails | `Heroic Funding` |
 | `FRONTEND_URL` | Frontend URL for email links | `http://localhost:5173` |
 | `SUPPORT_EMAIL` | Support contact email | `support@logicspark.com` |
 
@@ -270,9 +270,9 @@ const statusColors = {
 // In each template method, add to header:
 <div class="header">
   <img src="https://yourdomain.com/logo.png" 
-       alt="LogicSpark MCA" 
+       alt="Heroic Funding" 
        style="max-width: 150px; margin-bottom: 20px;">
-  <h1>🎉 Welcome to LogicSpark MCA</h1>
+  <h1>🎉 Welcome to Heroic Funding</h1>
 </div>
 ```
 
