@@ -19,7 +19,7 @@ const crypto = require('crypto');
 const MONGO_URI = process.env.MONGODB_URI//"mongodb+srv://admin:Kapil%403110.@cluster0.bmbvy.mongodb.net/efilebusiness?retryWrites=true&w=majority";
 const MONGO_DB = process.env.MONGO_DB//"efilebusiness";
 const COLLECTION_NAME = process.env.COLLECTION_NAME//"data";
-const INPUT_CSV = "files/data-23-dec.xlsx";
+const INPUT_CSV = "files/washington-state-270k.csv";
 console.log(MONGO_URI)
 
 // Tune these if needed (higher = faster until DB/network bottleneck)
@@ -105,8 +105,19 @@ async function run() {
         // Use sheet_to_json with defval: "" to ensure empty cells are empty strings, but we still need to normalize keys
         const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: "" });
 
+        // Helper to check if a row is empty (all values are empty/whitespace)
+        function isRowEmpty(row) {
+            if (!row || typeof row !== 'object' || Object.keys(row).length === 0) return true;
+            const values = Object.values(row);
+            return values.every(val => {
+                if (val === null || val === undefined) return true;
+                if (typeof val === 'string' && val.trim() === '') return true;
+                return false;
+            });
+        }
+
         // Filter out completely empty rows
-        parser = rawData.filter(row => Object.keys(row).length > 0);
+        parser = rawData.filter(row => !isRowEmpty(row));
 
         // Collect all unique keys from the first row (assuming header row is complete) or scan all
         // For safety, let's scan the first 100 rows or just use the first row if we trust it.
@@ -123,11 +134,76 @@ async function run() {
         console.log(`📊 Found ${parser.length} records in Excel file (filtered from ${rawData.length}).`);
         console.log(`🔑 Detected ${allHeaders.length} columns.`);
     } else {
+        console.log('📖 Detected CSV file, extracting headers...');
+        // For CSV, we need to read the first line to get headers
+        // Read first line synchronously to get headers
+        const fileContent = fs.readFileSync(filePath, 'utf8');
+        const lines = fileContent.split(/\r?\n/).filter(line => line.trim().length > 0);
+        if (lines.length === 0) {
+            throw new Error('CSV file is empty');
+        }
+        
+        // Parse first line as headers (handle tab or comma delimited)
+        const firstLine = lines[0];
+        const delimiter = firstLine.includes('\t') ? '\t' : ',';
+        
+        // Simple CSV header parser that handles quoted values
+        function parseCSVLine(line, delim) {
+            const result = [];
+            let current = '';
+            let inQuotes = false;
+            let quoteChar = null;
+            
+            for (let i = 0; i < line.length; i++) {
+                const char = line[i];
+                const nextChar = line[i + 1];
+                
+                if ((char === '"' || char === "'") && !inQuotes) {
+                    inQuotes = true;
+                    quoteChar = char;
+                } else if (char === quoteChar && inQuotes) {
+                    if (nextChar === quoteChar) {
+                        // Escaped quote
+                        current += char;
+                        i++; // Skip next quote
+                    } else if (nextChar === delim || nextChar === undefined || nextChar === '\r' || nextChar === '\n') {
+                        // End of quoted field
+                        inQuotes = false;
+                        quoteChar = null;
+                    } else {
+                        current += char;
+                    }
+                } else if (char === delim && !inQuotes) {
+                    result.push(current.trim());
+                    current = '';
+                } else {
+                    current += char;
+                }
+            }
+            result.push(current.trim());
+            return result;
+        }
+        
+        allHeaders = parseCSVLine(firstLine, delimiter);
+        
+        // Clean up headers (remove quotes, trim whitespace)
+        allHeaders = allHeaders.map(h => {
+            const str = String(h || '').trim();
+            // Remove surrounding quotes if present
+            return str.replace(/^["']|["']$/g, '');
+        });
+        
+        console.log(`🔑 Detected ${allHeaders.length} columns from CSV header.`);
+        console.log(`📋 Headers: ${allHeaders.slice(0, 5).join(', ')}${allHeaders.length > 5 ? '...' : ''}`);
+        
+        // Create stream parser with the detected delimiter
         readStream = fs.createReadStream(filePath, { highWaterMark: READSTREAM_HIGH_WM });
-        parser = readStream.pipe(csv.parse({ columns: true, skip_empty_lines: true }));
-        // For CSV stream, we might not know all headers upfront unless we peek. 
-        // But usually 'columns: true' uses the first line. 
-        // We'll handle CSV headers dynamically or assume the first row dictates schema.
+        parser = readStream.pipe(csv.parse({ 
+            columns: true, 
+            skip_empty_lines: true,
+            delimiter: delimiter,
+            relax_column_count: true
+        }));
     }
 
     const client = new MongoClient(MONGO_URI, {
@@ -139,6 +215,7 @@ async function run() {
     let currentIndex = 0;   // absolute row index
     let processed = 0;      // rows processed since resume
     let inserted = 0;       // rows inserted
+    let skipped = 0;        // rows skipped (empty)
     let inFlight = 0;       // running batch jobs
     let ended = false;
     let hadError = false;
@@ -163,7 +240,7 @@ async function run() {
         const etaSec = fileSize && rps > 0 ? Math.max(0, ((fileSize - bytesRead) / (bytesRead / Math.max(1, processed))) / rps) : 0;
 
         process.stdout.write(
-            `\r⏱️ ${rps.toFixed(0)} rows/s | 📦 in-flight ${inFlight}/${CONCURRENCY} | ✅ inserted ${inserted} | 🧮 processed ${processed} | 📊 ${pct}% | ⏳ ETA ~${Math.round(etaSec)}s   `
+            `\r⏱️ ${rps.toFixed(0)} rows/s | 📦 in-flight ${inFlight}/${CONCURRENCY} | ✅ inserted ${inserted} | 🧮 processed ${processed} | ⏭️  skipped ${skipped} | 📊 ${pct}% | ⏳ ETA ~${Math.round(etaSec)}s   `
         );
 
         lastTick = now;
@@ -184,47 +261,123 @@ async function run() {
         }
     }
 
-    // Helper to camelCase keys and clean values
-    function toCamelCase(str) {
+    // Helper to check if a record is empty (all values are empty/whitespace)
+    function isRecordEmpty(record) {
+        if (!record || typeof record !== 'object') return true;
+        const values = Object.values(record);
+        if (values.length === 0) return true;
+        // Check if all values are empty, null, undefined, or whitespace
+        return values.every(val => {
+            if (val === null || val === undefined) return true;
+            if (typeof val === 'string' && val.trim() === '') return true;
+            return false;
+        });
+    }
+
+    // Helper to normalize CSV header names to lowercase for matching
+    function normalizeHeader(str) {
         return str
             .replace(/[^a-zA-Z0-9 ]/g, "")
             .trim()
-            .split(/\s+/)
-            .map((word, index) =>
-                index === 0 ? word.toLowerCase() : word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
-            )
-            .join("");
+            .toLowerCase();
     }
 
-    // Pre-compute normalized headers if we have them
-    const normalizedHeaders = allHeaders.map(h => toCamelCase(h));
+    // Mapping from CSV headers to MongoDB document keys
+    function getMongoKey(csvHeader) {
+        if (!csvHeader) return null;
+        
+        // Trim the header first to handle any whitespace
+        const trimmed = csvHeader.toString().trim();
+        
+        // Remove any BOM or zero-width characters
+        const cleaned = trimmed.replace(/^\uFEFF/, '').replace(/[\u200B-\u200D\uFEFF]/g, '');
+        
+        // Direct exact matches first (case-sensitive, after cleaning)
+        const directMatches = {
+            'uniqueId': 'uniqueId',
+            'UniqueId': 'uniqueId',
+            'UNIQUEID': 'uniqueId',
+            'Name': 'company',
+            'name': 'company',
+            'NAME': 'company',
+            'company': 'company',
+            'Company': 'company',
+            'COMPANY': 'company',
+            'revenue': 'monthlyRevenue',
+            'Revenue': 'monthlyRevenue',
+            'REVENUE': 'monthlyRevenue',
+            'Phone Number': 'phoneNumber',
+        };
+        
+        if (directMatches[cleaned]) {
+            return directMatches[cleaned];
+        }
+        
+        // Normalize and check mapping (handles variations like "Name ", " name", etc.)
+        const normalized = normalizeHeader(cleaned);
+        const mapping = {
+            'phonenumber': 'phoneNumber',
+            'firstname': 'firstName',
+            'lastname': 'lastName',
+            'name': 'company',
+            'company': 'company',
+            'revenue': 'monthlyRevenue',
+            'carrier': 'networktype',
+            'linetype': 'numbertype',
+            'email': 'email',
+            'address': 'address',
+            'city': 'city',
+            'zip': 'zip',
+            'uniqueid': 'uniqueId',
+            'state': 'state',
+            'taxid': 'taxId',
+            'birthdate': 'birthDate',
+            'datebusinessstarted': 'dateBusinessStarted',
+            'siccode': 'sicCode',
+            'emailstatus': 'emailStatus',
+            'title': 'title',
+            'status': 'status',
+            'url': 'URL'
+        };
+        
+        const result = mapping[normalized] || null;
+        
+        // Extra check: if normalized is "name" and we didn't get a match, return company anyway
+        if (!result && normalized === 'name') {
+            return 'company';
+        }
+        
+        return result;
+    }
 
-    // Clean and normalize values for common columns from the new dataset
-    function normalizeValue(key, value) {
+    // Clean and normalize values
+    function normalizeValue(mongoKey, value) {
         if (value === undefined || value === null) return "";
 
         if (typeof value === "string") {
             const trimmed = value.trim();
             const lower = trimmed.toLowerCase();
-            if (lower === "undefined" || lower === "unknown") return "";
+            if (lower === "undefined" || lower === "unknown" || lower === "null" || lower === "") return "";
 
-            if (key === "revenue") {
+            if (mongoKey === "monthlyRevenue") {
                 const num = parseFloat(trimmed.replace(/[^0-9.-]/g, ""));
                 return Number.isFinite(num) ? num : "";
             }
 
-            if (key === "phoneNumber") {
+            if (mongoKey === "phoneNumber") {
                 const digits = trimmed.replace(/\D+/g, "");
                 return digits || "";
             }
 
-            if (key === "sicCode") {
-                const digits = trimmed.replace(/[^\d]/g, "");
-                return digits || trimmed;
-            }
+            if (mongoKey === "zip") return trimmed;
 
-            // Keep ZIP as a trimmed string; preserves leading zeros and suffixes
-            if (key === "zip") return trimmed;
+            if (mongoKey === "email") {
+                const emailLower = trimmed.toLowerCase();
+                if (emailLower && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailLower)) {
+                    return emailLower;
+                }
+                return trimmed;
+            }
 
             return trimmed;
         }
@@ -232,25 +385,59 @@ async function run() {
         return value;
     }
 
+    let firstRecordLogged = false;
     function transformRecord(record) {
-        const newRecord = {};
+        // Initialize with all required MongoDB document fields
+        const newRecord = {
+            phoneNumber: "",
+            numbertype: "",
+            networktype: "",
+            firstName: "",
+            lastName: "",
+            company: "",
+            email: "",
+            phone2: "",
+            phone3: "",
+            address: "",
+            city: "",
+            state: "",
+            zip: "",
+            taxId: "",
+            birthDate: "",
+            dateBusinessStarted: "",
+            monthlyRevenue: "",
+            uniqueId: "",
+            isActive: true
+        };
 
-        // If we have a master list of headers (from Excel), use that to ensure all keys exist
-        // Otherwise (CSV stream), we iterate the record's keys.
-        const keysToUse = normalizedHeaders.length > 0 ? normalizedHeaders : Object.keys(record).map(k => toCamelCase(k));
-
-        // Create a map of the current record's normalized keys to values for O(1) lookup
-        const recordMap = {};
-        for (const [key, value] of Object.entries(record)) {
-            recordMap[toCamelCase(key)] = value;
+        // Log CSV keys from first record for debugging
+        const isFirstRecord = !firstRecordLogged;
+        if (isFirstRecord) {
+            console.log('\n🔍 CSV Record keys:', Object.keys(record));
         }
 
-        for (const key of keysToUse) {
-            const value = recordMap[key];
-            newRecord[key] = normalizeValue(key, value);
+        // Map CSV record fields to MongoDB document structure
+        for (const [csvKey, value] of Object.entries(record)) {
+            const mongoKey = getMongoKey(csvKey);
+            if (mongoKey) {
+                const normalizedValue = normalizeValue(mongoKey, value);
+                newRecord[mongoKey] = normalizedValue;
+                if (isFirstRecord) {
+                    console.log(`✅ Mapped "${csvKey}" → "${mongoKey}" = "${normalizedValue}"`);
+                }
+            } else if (isFirstRecord) {
+                // Log unmapped keys for debugging (only first time)
+                console.log(`⚠️  Unmapped CSV key: "${csvKey}" = "${value}"`);
+            }
         }
-        // 3. Generate uniqueId if missing
-        if (!newRecord.uniqueId) {
+        
+        // Set flag after processing first record
+        if (isFirstRecord) {
+            firstRecordLogged = true;
+        }
+
+        // Generate uniqueId if missing
+        if (!newRecord.uniqueId || newRecord.uniqueId === "") {
             newRecord.uniqueId = crypto.randomBytes(4).toString('hex').toUpperCase(); // 8 chars hex
         }
 
@@ -301,6 +488,12 @@ async function run() {
         for await (const record of parser) {
             const myIndex = currentIndex++;
             if (myIndex < lastCheckpointIndex) continue;
+
+            // Skip empty rows
+            if (isRecordEmpty(record)) {
+                skipped++;
+                continue;
+            }
 
             processed++;
             batch.push(record);
@@ -368,6 +561,7 @@ async function run() {
   BATCH_SIZE: ${BATCH_SIZE}, CONCURRENCY: ${CONCURRENCY}, MAX_INFLIGHT: ${MAX_INFLIGHT}
   Total processed: ${processed}
   Total inserted:  ${inserted}
+  Total skipped:   ${skipped}
   Final index:     ${currentIndex}
   Completed OK:    ${!hadError && ended}
 `);

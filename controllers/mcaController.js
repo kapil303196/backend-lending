@@ -65,13 +65,6 @@ exports.getAllMCA = async (req, res) => {
 exports.getMCAById = async (req, res) => {
   try {
     const { id } = req.params;
-    const { includeResponses = 'true' } = req.query;
-
-    // Treat multiple truthy values as a request to include responses
-    const include =
-      typeof includeResponses === 'string'
-        ? ['true', '1', 'yes', 'y'].includes(includeResponses.toLowerCase())
-        : Boolean(includeResponses);
 
     const record = await MCA.findByIdOrUniqueId(id);
 
@@ -80,14 +73,6 @@ exports.getMCAById = async (req, res) => {
         success: false,
         message: 'MCA record not found'
       });
-    }
-
-    if (include) {
-      try {
-        await record.populate('userResponses');
-      } catch (populateErr) {
-        console.error('Populate userResponses error:', populateErr);
-      }
     }
 
     // Normalize any "llc" casing to "LLC"

@@ -136,62 +136,68 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Initialize database connection
-const initializeApp = async () => {
+// Initialize database connection and start server
+const startServer = async () => {
   try {
-    // Connect to MongoDB
+    // Connect to MongoDB first
     await connectDB();
     console.log('✅ Database connected successfully');
+    
+    // Only start server after database connection is successful
+    // For local development - only start server if not in production/Vercel environment
+    if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+      const server = app.listen(PORT, () => {
+        console.log(`\n🚀 Server is running on port ${PORT}`);
+        console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
+        console.log(`🌐 API URL: http://localhost:${PORT}`);
+        console.log(`\n📚 Documentation:`);
+        console.log(`   🔷 Swagger UI:  http://localhost:${PORT}/api-docs`);
+        console.log(`   📄 JSON Spec:   http://localhost:${PORT}/api-docs.json`);
+        console.log(`   📦 Postman:     MCA_Lending_API.postman_collection.json`);
+        console.log(`\n📚 Available endpoints:`);
+        console.log(`   GET  /health - Health check`);
+        console.log(`   GET  /api/mca - Get all MCA records`);
+        console.log(`   GET  /api/mca/stats - Get MCA statistics`);
+        console.log(`   GET  /api/mca/:id - Get MCA by ID or uniqueId`);
+        console.log(`   POST /api/mca - Create MCA record`);
+        console.log(`   PUT  /api/mca/:id - Update MCA record`);
+        console.log(`   DELETE /api/mca/:id - Soft delete MCA record`);
+        console.log(`   POST /api/mca/:id/restore - Restore MCA record`);
+        console.log(`   GET  /api/responses - Get all responses`);
+        console.log(`   GET  /api/responses/stats - Get response statistics`);
+        console.log(`   GET  /api/responses/mca/:id - Get responses for MCA`);
+        console.log(`   POST /api/responses - Submit user response`);
+        console.log(`   POST /api/upload/single - Upload single file`);
+        console.log(`   POST /api/upload/multiple - Upload multiple files`);
+        console.log(`\n✅ Server ready to accept connections\n`);
+      });
+
+      // Graceful shutdown for local development
+      process.on('SIGTERM', () => {
+        console.log('SIGTERM signal received: closing HTTP server');
+        server.close(() => {
+          console.log('HTTP server closed');
+          mongoose.connection.close(false, () => {
+            console.log('MongoDB connection closed');
+            process.exit(0);
+          });
+        });
+      });
+    }
   } catch (error) {
-    console.error('❌ Failed to connect to database:', error);
+    console.error('❌ Failed to start server:', error);
     // In production (Vercel), we still want to export the app even if DB connection fails
     // The app will handle errors per request
+    if (process.env.NODE_ENV === 'production' || process.env.VERCEL) {
+      console.log('⚠️  Continuing in production mode despite database connection failure');
+    } else {
+      process.exit(1);
+    }
   }
 };
 
-// Initialize the database connection
-initializeApp();
-
-// For local development - only start server if not in production/Vercel environment
-if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
-  const server = app.listen(PORT, () => {
-    console.log(`\n🚀 Server is running on port ${PORT}`);
-    console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
-    console.log(`🌐 API URL: http://localhost:${PORT}`);
-    console.log(`\n📚 Documentation:`);
-    console.log(`   🔷 Swagger UI:  http://localhost:${PORT}/api-docs`);
-    console.log(`   📄 JSON Spec:   http://localhost:${PORT}/api-docs.json`);
-    console.log(`   📦 Postman:     MCA_Lending_API.postman_collection.json`);
-    console.log(`\n📚 Available endpoints:`);
-    console.log(`   GET  /health - Health check`);
-    console.log(`   GET  /api/mca - Get all MCA records`);
-    console.log(`   GET  /api/mca/stats - Get MCA statistics`);
-    console.log(`   GET  /api/mca/:id - Get MCA by ID or uniqueId`);
-    console.log(`   POST /api/mca - Create MCA record`);
-    console.log(`   PUT  /api/mca/:id - Update MCA record`);
-    console.log(`   DELETE /api/mca/:id - Soft delete MCA record`);
-    console.log(`   POST /api/mca/:id/restore - Restore MCA record`);
-    console.log(`   GET  /api/responses - Get all responses`);
-    console.log(`   GET  /api/responses/stats - Get response statistics`);
-    console.log(`   GET  /api/responses/mca/:id - Get responses for MCA`);
-    console.log(`   POST /api/responses - Submit user response`);
-    console.log(`   POST /api/upload/single - Upload single file`);
-    console.log(`   POST /api/upload/multiple - Upload multiple files`);
-    console.log(`\n✅ Server ready to accept connections\n`);
-  });
-
-  // Graceful shutdown for local development
-  process.on('SIGTERM', () => {
-    console.log('SIGTERM signal received: closing HTTP server');
-    server.close(() => {
-      console.log('HTTP server closed');
-      mongoose.connection.close(false, () => {
-        console.log('MongoDB connection closed');
-        process.exit(0);
-      });
-    });
-  });
-}
+// Start the application
+startServer();
 
 module.exports = app;
 
