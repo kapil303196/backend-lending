@@ -50,7 +50,7 @@ POST /api/user-responses
 ```
 
 **Email Sent:**
-- **Subject:** 🎉 Welcome to LogicSpark MCA - Your Account Details
+- **Subject:** 🎉 Welcome to Heroic Funding - Your Account Details
 - **Contains:** Email, temporary password, application ID, login link
 
 ---
@@ -429,7 +429,7 @@ JWT_EXPIRES_IN=7d
 # Email Configuration (already set up)
 EMAIL_USER=your-gmail@gmail.com
 EMAIL_PASSWORD=your-app-password
-EMAIL_FROM_NAME=LogicSpark MCA
+EMAIL_FROM_NAME=Heroic Funding
 FRONTEND_URL=http://localhost:5173
 SUPPORT_EMAIL=support@logicspark.com
 ```

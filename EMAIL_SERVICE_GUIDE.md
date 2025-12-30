@@ -47,7 +47,7 @@ EMAIL_PROVIDER=gmail
 EMAIL_USER=your-email@gmail.com
 EMAIL_PASSWORD=your-16-char-app-password
 EMAIL_FROM=your-email@gmail.com
-EMAIL_FROM_NAME=LogicSpark MCA
+EMAIL_FROM_NAME=Heroic Funding
 ```
 
 #### Option B: SendGrid (Recommended for Production)
@@ -67,7 +67,7 @@ EMAIL_FROM_NAME=LogicSpark MCA
 EMAIL_PROVIDER=sendgrid
 SENDGRID_API_KEY=SG.xxxxxxxxxxxxxxxxxxxxx
 EMAIL_FROM=noreply@yourdomain.com
-EMAIL_FROM_NAME=LogicSpark MCA
+EMAIL_FROM_NAME=Heroic Funding
 ```
 
 **Important:** You must verify your sender email in SendGrid dashboard!
@@ -92,7 +92,7 @@ AWS_ACCESS_KEY_ID=your-access-key
 AWS_SECRET_ACCESS_KEY=your-secret-key
 AWS_REGION=us-east-1
 EMAIL_FROM=noreply@yourdomain.com
-EMAIL_FROM_NAME=LogicSpark MCA
+EMAIL_FROM_NAME=Heroic Funding
 ```
 
 ### 2. Configure Environment Variables
@@ -103,7 +103,7 @@ Add these to your `.env` file:
 # Email Service Configuration
 EMAIL_PROVIDER=gmail  # or sendgrid, or ses
 EMAIL_FROM=noreply@logicspark.com
-EMAIL_FROM_NAME=LogicSpark MCA
+EMAIL_FROM_NAME=Heroic Funding
 
 # Provider-specific credentials (choose one)
 # ... (see above)
@@ -177,7 +177,7 @@ await emailService.sendStatusUpdateEmail('user@example.com', {
 ## Email Templates
 
 ### Welcome Email
-- **Subject:** 🎉 Welcome to LogicSpark MCA - Your Account Details
+- **Subject:** 🎉 Welcome to Heroic Funding - Your Account Details
 - **Content:** 
   - Greeting with user's name
   - Login credentials (email + temporary password)
@@ -187,7 +187,7 @@ await emailService.sendStatusUpdateEmail('user@example.com', {
   - Login button
 
 ### Application Confirmation
-- **Subject:** ✅ Application Submitted Successfully - LogicSpark MCA
+- **Subject:** ✅ Application Submitted Successfully - Heroic Funding
 - **Content:**
   - Confirmation message
   - Application details (ID, amount, date)

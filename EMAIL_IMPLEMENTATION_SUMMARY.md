@@ -105,7 +105,7 @@ package.json
 ```bash
 EMAIL_USER=your-email@gmail.com
 EMAIL_PASSWORD=xxxx-xxxx-xxxx-xxxx
-EMAIL_FROM_NAME=LogicSpark MCA
+EMAIL_FROM_NAME=Heroic Funding
 FRONTEND_URL=http://localhost:5173
 SUPPORT_EMAIL=support@logicspark.com
 ```
@@ -159,7 +159,7 @@ PATCH /api/user-responses/:id/status
 
 ### 1. Welcome Email
 ```
-Subject: 🎉 Welcome to LogicSpark MCA - Your Account Details
+Subject: 🎉 Welcome to Heroic Funding - Your Account Details
 
 Content:
 - Personalized greeting
@@ -276,7 +276,7 @@ getWelcomeEmailTemplate(data) {
       <img src="https://your-domain.com/logo.png" 
            alt="Logo" 
            style="max-width: 150px; margin-bottom: 20px;">
-      <h1>🎉 Welcome to LogicSpark MCA</h1>
+      <h1>🎉 Welcome to Heroic Funding</h1>
     </div>
   `;
 }

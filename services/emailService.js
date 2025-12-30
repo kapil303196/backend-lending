@@ -10,7 +10,7 @@ class EmailService {
     this.transporter = null;
     this.initialized = false;
     this.fromEmail = process.env.EMAIL_FROM || process.env.EMAIL_USER;
-    this.fromName = process.env.EMAIL_FROM_NAME || 'LogicSpark MCA';
+    this.fromName = process.env.EMAIL_FROM_NAME || 'Heroicfunding';
   }
 
   /**
@@ -150,7 +150,7 @@ class EmailService {
 
     return await this.sendEmail({
       to: userEmail,
-      subject: '🎉 Welcome to LogicSpark MCA - Your Account Details',
+      subject: '🎉 Welcome to Heroic Funding - Your Account Details',
       html: html
     });
   }
@@ -172,7 +172,7 @@ class EmailService {
 
     return await this.sendEmail({
       to: userEmail,
-      subject: '✅ Application Submitted Successfully - LogicSpark MCA',
+      subject: '✅ Application Submitted Successfully - Heroic Funding',
       html: html
     });
   }
@@ -216,7 +216,7 @@ class EmailService {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Welcome to LogicSpark MCA</title>
+    <title>Welcome to Heroic Funding</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; background-color: #f4f4f4; }
@@ -243,14 +243,14 @@ class EmailService {
 <body>
     <div class="container">
         <div class="header">
-            <h1>🎉 Welcome to LogicSpark MCA</h1>
+            <h1>🎉 Welcome to Heroic Funding</h1>
             <p>Your account has been created successfully</p>
         </div>
         
         <div class="content">
             <div class="welcome-box">
                 <p>Hello <strong>${data.name}</strong>,</p>
-                <p style="margin-top: 10px;">Thank you for choosing LogicSpark MCA. We're excited to have you on board! Your account has been created and you can now access our platform.</p>
+                <p style="margin-top: 10px;">Thank you for choosing Heroic Funding. We're excited to have you on board! Your account has been created and you can now access our platform.</p>
             </div>
 
             <div class="credentials-box">
@@ -296,7 +296,7 @@ class EmailService {
         </div>
 
         <div class="footer">
-            <p><strong>LogicSpark MCA</strong></p>
+            <p><strong>Heroic Funding</strong></p>
             <p style="margin: 10px 0;">Empowering businesses with flexible financing solutions</p>
             <p style="margin: 10px 0;">
                 <a href="${data.loginUrl}">Dashboard</a> | 
@@ -304,7 +304,7 @@ class EmailService {
                 <a href="#">Privacy Policy</a>
             </p>
             <p style="margin-top: 20px; font-size: 12px; color: #999;">
-                © ${new Date().getFullYear()} LogicSpark MCA. All rights reserved.
+                © ${new Date().getFullYear()} Heroic Funding. All rights reserved.
             </p>
         </div>
     </div>
@@ -383,9 +383,9 @@ class EmailService {
         </div>
 
         <div class="footer">
-            <p><strong>LogicSpark MCA</strong></p>
+            <p><strong>Heroic Funding</strong></p>
             <p style="margin-top: 10px; font-size: 12px; color: #999;">
-                © ${new Date().getFullYear()} LogicSpark MCA. All rights reserved.
+                © ${new Date().getFullYear()} Heroic Funding. All rights reserved.
             </p>
         </div>
     </div>
@@ -455,9 +455,9 @@ class EmailService {
         </div>
 
         <div class="footer">
-            <p><strong>LogicSpark MCA</strong></p>
+            <p><strong>Heroic Funding</strong></p>
             <p style="margin-top: 10px; font-size: 12px; color: #999;">
-                © ${new Date().getFullYear()} LogicSpark MCA. All rights reserved.
+                © ${new Date().getFullYear()} Heroic Funding. All rights reserved.
             </p>
         </div>
     </div>

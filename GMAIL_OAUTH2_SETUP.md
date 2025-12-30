@@ -188,7 +188,7 @@ EMAIL_USER=your-email@gmail.com
 GMAIL_CLIENT_ID=xxxxx.apps.googleusercontent.com
 GMAIL_CLIENT_SECRET=xxxxx
 GMAIL_REFRESH_TOKEN=1//xxxxx
-EMAIL_FROM_NAME=LogicSpark MCA
+EMAIL_FROM_NAME=Heroic Funding
 
 # Application URLs
 FRONTEND_URL=http://localhost:5173
@@ -401,7 +401,7 @@ EMAIL_USER=your-email@gmail.com
 GMAIL_CLIENT_ID=xxxxx.apps.googleusercontent.com
 GMAIL_CLIENT_SECRET=xxxxx
 GMAIL_REFRESH_TOKEN=1//xxxxx
-EMAIL_FROM_NAME=LogicSpark MCA
+EMAIL_FROM_NAME=Heroic Funding
 ```
 
 ### Key URLs

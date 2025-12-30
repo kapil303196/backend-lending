@@ -32,7 +32,7 @@ A **production-ready email service** that automatically sends emails to users wh
    EMAIL_USER=your-email@gmail.com
    EMAIL_PASSWORD=xxxx-xxxx-xxxx-xxxx  # Your app password
    EMAIL_FROM=your-email@gmail.com
-   EMAIL_FROM_NAME=LogicSpark MCA
+   EMAIL_FROM_NAME=Heroic Funding
    FRONTEND_URL=http://localhost:5173
    SUPPORT_EMAIL=support@logicspark.com
    ```
@@ -55,7 +55,7 @@ A **production-ready email service** that automatically sends emails to users wh
    EMAIL_PROVIDER=sendgrid
    SENDGRID_API_KEY=SG.xxxxxxxxxxxxx
    EMAIL_FROM=noreply@yourdomain.com
-   EMAIL_FROM_NAME=LogicSpark MCA
+   EMAIL_FROM_NAME=Heroic Funding
    FRONTEND_URL=http://localhost:5173
    SUPPORT_EMAIL=support@logicspark.com
    ```
@@ -115,7 +115,7 @@ Content-Type: application/json
 ## Email Templates Preview
 
 ### 1. Welcome Email
-- **Subject:** 🎉 Welcome to LogicSpark MCA - Your Account Details
+- **Subject:** 🎉 Welcome to Heroic Funding - Your Account Details
 - **Contains:**
   - User's name and greeting
   - Login credentials (email + temporary password)
