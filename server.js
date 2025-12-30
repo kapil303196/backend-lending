@@ -7,6 +7,7 @@ const swaggerUi = require('swagger-ui-express');
 const swaggerSpec = require('./config/swagger');
 
 const connectDB = require('./config/database');
+const emailService = require('./services/emailService');
 const mcaRoutes = require('./routes/mcaRoutes');
 const userResponseRoutes = require('./routes/userResponseRoutes');
 const uploadRoutes = require('./routes/uploadRoutes');
@@ -143,6 +144,16 @@ const startServer = async () => {
     await connectDB();
     console.log('✅ Database connected successfully');
     
+    // Initialize email service
+    try {
+      await emailService.initialize();
+      console.log('✅ Email service initialized successfully');
+    } catch (emailError) {
+      console.warn('⚠️  Email service initialization failed:', emailError.message);
+      console.warn('⚠️  Server will continue, but emails may not be sent. Check your email configuration.');
+      // Don't fail server startup if email service fails - it's not critical
+    }
+    
     // Only start server after database connection is successful
     // For local development - only start server if not in production/Vercel environment
     if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
@@ -177,6 +188,11 @@ const startServer = async () => {
         console.log('SIGTERM signal received: closing HTTP server');
         server.close(() => {
           console.log('HTTP server closed');
+          // Close email service
+          emailService.close().catch(err => {
+            console.warn('Error closing email service:', err.message);
+          });
+          // Close MongoDB connection
           mongoose.connection.close(false, () => {
             console.log('MongoDB connection closed');
             process.exit(0);

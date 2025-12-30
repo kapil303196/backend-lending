@@ -42,11 +42,17 @@ class EmailService {
             refreshToken: GMAIL_REFRESH_TOKEN,
             accessToken: undefined // Will be generated automatically
           },
-          pool: true,
-          maxConnections: 5,
-          maxMessages: 100,
-          rateDelta: 1000,
-          rateLimit: 5
+          // Connection settings optimized for serverless (Vercel)
+          connectionTimeout: 10000, // 10 seconds
+          greetingTimeout: 10000, // 10 seconds
+          socketTimeout: 10000, // 10 seconds
+          // Disable pooling for serverless environments
+          pool: false,
+          // Retry settings
+          retry: {
+            attempts: 2,
+            delay: 1000
+          }
         });
         
         console.log('🔐 Using Gmail OAuth2 with refresh token');
@@ -58,11 +64,17 @@ class EmailService {
             user: EMAIL_USER,
             pass: process.env.EMAIL_PASSWORD
           },
-          pool: true,
-          maxConnections: 5,
-          maxMessages: 100,
-          rateDelta: 1000,
-          rateLimit: 5
+          // Connection settings optimized for serverless (Vercel)
+          connectionTimeout: 10000, // 10 seconds
+          greetingTimeout: 10000, // 10 seconds
+          socketTimeout: 10000, // 10 seconds
+          // Disable pooling for serverless environments
+          pool: false,
+          // Retry settings
+          retry: {
+            attempts: 2,
+            delay: 1000
+          }
         });
         
         console.log('🔑 Using Gmail App Password (fallback)');
@@ -70,13 +82,40 @@ class EmailService {
         throw new Error('Gmail credentials not configured. Set either OAuth2 credentials (GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN) or EMAIL_PASSWORD in .env');
       }
 
-      // Verify transporter configuration
-      await this.transporter.verify();
+      // Verify transporter configuration with timeout
+      // Skip verification in serverless environments (Vercel) to avoid timeout issues
+      const isServerless = process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME;
+      
+      if (!isServerless) {
+        try {
+          // Set a timeout for verification (5 seconds)
+          const verifyPromise = this.transporter.verify();
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Verification timeout')), 5000)
+          );
+          
+          await Promise.race([verifyPromise, timeoutPromise]);
+          console.log('✅ Email service verified successfully');
+        } catch (verifyError) {
+          console.warn('⚠️  Email service verification failed (will still attempt to send):', verifyError.message);
+          // Don't throw - allow sending emails even if verification fails
+        }
+      } else {
+        console.log('⚠️  Skipping email verification in serverless environment');
+      }
+      
       this.initialized = true;
       console.log('✅ Email service initialized successfully with Gmail');
     } catch (error) {
       console.error('❌ Email service initialization failed:', error.message);
-      throw new Error(`Email service initialization failed: ${error.message}`);
+      // In serverless, don't throw - allow the service to be used anyway
+      // The actual send will handle errors
+      if (!process.env.VERCEL && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
+        throw new Error(`Email service initialization failed: ${error.message}`);
+      } else {
+        console.warn('⚠️  Continuing in serverless mode despite initialization warning');
+        this.initialized = true; // Mark as initialized anyway
+      }
     }
   }
 
@@ -86,8 +125,18 @@ class EmailService {
    * @param {number} retries - Number of retry attempts
    */
   async sendEmail(options, retries = 3) {
-    if (!this.initialized) {
-      await this.initialize();
+    try {
+      if (!this.initialized) {
+        await this.initialize();
+      }
+    } catch (initError) {
+      // If initialization fails, log but don't throw - try to send anyway
+      console.warn('⚠️  Email service initialization had issues, attempting to send anyway:', initError.message);
+    }
+
+    // Check if transporter exists
+    if (!this.transporter) {
+      throw new Error('Email transporter not available. Please check your email configuration.');
     }
 
     const mailOptions = {
@@ -106,7 +155,13 @@ class EmailService {
     let lastError;
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
-        const info = await this.transporter.sendMail(mailOptions);
+        // Add timeout wrapper for serverless environments
+        const sendPromise = this.transporter.sendMail(mailOptions);
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Email send timeout')), 15000) // 15 second timeout
+        );
+        
+        const info = await Promise.race([sendPromise, timeoutPromise]);
         console.log(`✅ Email sent successfully to ${options.to} (Attempt ${attempt}/${retries})`);
         console.log(`Message ID: ${info.messageId}`);
         
@@ -119,9 +174,22 @@ class EmailService {
         lastError = error;
         console.error(`❌ Email send attempt ${attempt}/${retries} failed:`, error.message);
         
+        // If it's a connection error and we're in serverless, try to reinitialize
+        if ((error.message.includes('socket') || error.message.includes('TLS') || error.message.includes('connection')) && 
+            (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) && 
+            attempt < retries) {
+          console.log('🔄 Connection error detected, reinitializing transporter...');
+          this.initialized = false;
+          try {
+            await this.initialize();
+          } catch (reinitError) {
+            console.warn('⚠️  Reinitialization failed:', reinitError.message);
+          }
+        }
+        
         if (attempt < retries) {
-          // Exponential backoff: wait 2^attempt seconds
-          const waitTime = Math.pow(2, attempt) * 1000;
+          // Exponential backoff: wait 2^attempt seconds (max 5 seconds)
+          const waitTime = Math.min(Math.pow(2, attempt) * 1000, 5000);
           console.log(`⏳ Retrying in ${waitTime / 1000} seconds...`);
           await this.sleep(waitTime);
         }
