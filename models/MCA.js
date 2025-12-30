@@ -38,14 +38,19 @@ mcaSchema.index({ createdAt: -1 });
 
 // Static method to find by MongoDB ID or uniqueId
 mcaSchema.statics.findByIdOrUniqueId = async function(identifier) {
-  // Try to find by MongoDB _id first
+  let doc;
+  
+  // Try to find by uniqueId first
+  doc = await this.findOne({ uniqueId: identifier }).populate('userResponses');
+  if (doc) return doc;
+  
+  // If not found and identifier is a valid ObjectId, try MongoDB _id
   if (mongoose.Types.ObjectId.isValid(identifier)) {
-    const doc = await this.findById(identifier);
-    if (doc) return doc;
+    doc = await this.findById(identifier).populate('userResponses');
+    return doc;
   }
   
-  // If not found or not valid ObjectId, try uniqueId
-  return await this.findOne({ uniqueId: identifier });
+  return null;
 };
 
 // Instance method for soft delete
