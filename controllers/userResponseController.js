@@ -280,12 +280,12 @@ exports.createResponse = async (req, res) => {
         })
         .then((result) => {
           console.log(
-            `✅ Welcome email sent successfully to ${responseData.formData.email}`
+            `✅ Welcome email sent successfully to ${responseData.formData.businessEmail}`
           );
         })
         .catch((error) => {
           console.error(
-            `❌ Failed to send welcome email to ${responseData.formData.email}:`,
+            `❌ Failed to send welcome email to ${responseData.formData.businessEmail}:`,
             error.message
           );
           // Don't fail the request if email fails - log it for admin review
