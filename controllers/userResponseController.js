@@ -267,7 +267,7 @@ exports.createResponse = async (req, res) => {
     }
 
     // Send welcome email with credentials (only for new users)
-    if (isNewUser) {
+    
       emailService
         .sendWelcomeEmail(responseData.formData.businessEmail, {
           name:
@@ -290,7 +290,7 @@ exports.createResponse = async (req, res) => {
           );
           // Don't fail the request if email fails - log it for admin review
         });
-    }
+    
 
     res.status(201).json({
       success: true,
