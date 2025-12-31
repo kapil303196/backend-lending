@@ -346,31 +346,9 @@ class EmailService {
             </div>
 
             <div class="divider"></div>
-
-            <h3 style="color: #667eea; margin-bottom: 15px;">📋 Next Steps</h3>
-            <ol style="padding-left: 20px; color: #555;">
-                <li style="margin: 10px 0;">Click the button above to access your account</li>
-                <li style="margin: 10px 0;">Complete your profile information</li>
-                <li style="margin: 10px 0;">Upload required documents</li>
-                <li style="margin: 10px 0;">Track your application status in real-time</li>
-            </ol>
-
-            <div class="divider"></div>
-
-            <p style="color: #666; font-size: 14px;">
-                If you have any questions or need assistance, please don't hesitate to contact our support team at 
-                <a href="mailto:${data.supportEmail}" style="color: #667eea;">${data.supportEmail}</a>
-            </p>
         </div>
 
         <div class="footer">
-            <p><strong>Heroic Funding</strong></p>
-            <p style="margin: 10px 0;">Empowering businesses with flexible financing solutions</p>
-            <p style="margin: 10px 0;">
-                <a href="${data.loginUrl}">Dashboard</a> | 
-                <a href="mailto:${data.supportEmail}">Support</a> | 
-                <a href="#">Privacy Policy</a>
-            </p>
             <p style="margin-top: 20px; font-size: 12px; color: #999;">
                 © ${new Date().getFullYear()} Heroic Funding. All rights reserved.
             </p>
