@@ -15,6 +15,7 @@ const addressRoutes = require('./routes/addressRoutes');
 const authRoutes = require('./routes/authRoutes');
 const adminConfigRoutes = require('./routes/adminConfigRoutes');
 const dealerRoutes = require('./routes/dealerRoutes');
+const pdfRoutes = require('./routes/pdfRoutes');
 const { auditMiddleware } = require('./middleware/auditMiddleware');
 
 const app = express();
@@ -31,6 +32,22 @@ app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
   next();
 });
+
+// Database connection middleware for Vercel (serverless)
+// Ensures database is connected on each request
+if (process.env.VERCEL) {
+  app.use(async (req, res, next) => {
+    try {
+      if (mongoose.connection.readyState !== 1) {
+        await connectDB();
+      }
+    } catch (error) {
+      console.error('Database connection error in middleware:', error.message);
+      // Continue anyway - let individual routes handle the error
+    }
+    next();
+  });
+}
 
 // Audit middleware - tracks user context for audit logging
 // This should be applied globally to capture user context for all operations
@@ -90,6 +107,7 @@ app.use('/api/upload', uploadRoutes);
 app.use('/api/address', addressRoutes);
 app.use('/api/config', adminConfigRoutes);
 app.use('/api/dealer', dealerRoutes);
+app.use('/api/pdf', pdfRoutes);
 
 /**
  * @swagger
@@ -139,6 +157,12 @@ app.use((err, req, res, next) => {
 
 // Initialize database connection and start server
 const startServer = async () => {
+  // Skip initialization on Vercel - serverless functions handle connections per request
+  if (process.env.VERCEL) {
+    console.log('⚠️  Running on Vercel - skipping upfront initialization (will initialize on-demand)');
+    return;
+  }
+
   try {
     // Connect to MongoDB first
     await connectDB();
@@ -156,7 +180,7 @@ const startServer = async () => {
     
     // Only start server after database connection is successful
     // For local development - only start server if not in production/Vercel environment
-    if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+    if (process.env.NODE_ENV !== 'production') {
       const server = app.listen(PORT, () => {
         console.log(`\n🚀 Server is running on port ${PORT}`);
         console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);

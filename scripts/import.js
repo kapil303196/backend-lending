@@ -19,7 +19,7 @@ const crypto = require('crypto');
 const MONGO_URI = process.env.MONGODB_URI//"mongodb+srv://admin:Kapil%403110.@cluster0.bmbvy.mongodb.net/efilebusiness?retryWrites=true&w=majority";
 const MONGO_DB = process.env.MONGO_DB//"efilebusiness";
 const COLLECTION_NAME = process.env.COLLECTION_NAME//"data";
-const INPUT_CSV = "files/washington-state-270k.csv";
+const INPUT_CSV = "files/31-dec-mca-high-revenue.csv";
 console.log(MONGO_URI)
 
 // Tune these if needed (higher = faster until DB/network bottleneck)
