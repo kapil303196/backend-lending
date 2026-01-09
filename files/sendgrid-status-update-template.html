@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Status Update</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; background-color: #f4f4f4; }
+        .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; }
+        .header { background: #3b82f6; padding: 40px 20px; text-align: center; }
+        .header h1 { color: #ffffff; font-size: 28px; margin-bottom: 10px; }
+        .content { padding: 40px 30px; }
+        .status-badge { display: inline-block; padding: 8px 16px; background-color: #dbeafe; color: #1e40af; border-radius: 20px; font-weight: 600; text-transform: uppercase; font-size: 14px; }
+        .info-box { background-color: #f8f9ff; border-left: 4px solid #3b82f6; padding: 20px; margin: 20px 0; border-radius: 4px; }
+        .button { display: inline-block; padding: 14px 32px; background: #3b82f6; color: #ffffff; text-decoration: none; border-radius: 6px; margin: 20px 0; font-weight: 600; }
+        .footer { background-color: #f8f9fa; padding: 30px; text-align: center; color: #6c757d; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Application Status Update</h1>
+        </div>
+        
+        <div class="content">
+            <p>Hello <strong>{{name}}</strong>,</p>
+            
+            <div style="text-align: center; margin: 30px 0;">
+                <span class="status-badge">{{status}}</span>
+            </div>
+
+            <div class="info-box">
+                <p><strong>Application ID:</strong> {{uniqueId}}</p>
+                {{#if message}}
+                <p style="margin-top: 15px;">{{message}}</p>
+                {{/if}}
+            </div>
+
+            <div style="text-align: center;">
+                <a href="{{dashboardUrl}}" class="button">View Dashboard</a>
+            </div>
+
+            <p style="color: #666; font-size: 14px; margin-top: 30px;">
+                Questions? Contact us at <a href="mailto:{{supportEmail}}" style="color: #3b82f6;">{{supportEmail}}</a>
+            </p>
+        </div>
+
+        <div class="footer">
+            <p><strong>Heroic Funding</strong></p>
+            <p style="margin-top: 10px; font-size: 12px; color: #999;">
+                © 2024 Heroic Funding. All rights reserved.
+            </p>
+        </div>
+    </div>
+</body>
+</html>
