@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Application Submitted</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; background-color: #f4f4f4; }
+        .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; }
+        .header { background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 40px 20px; text-align: center; }
+        .header h1 { color: #ffffff; font-size: 28px; margin-bottom: 10px; }
+        .header p { color: #d1fae5; font-size: 16px; }
+        .content { padding: 40px 30px; }
+        .success-icon { text-align: center; font-size: 64px; margin: 20px 0; }
+        .info-box { background-color: #f0fdf4; border-left: 4px solid #10b981; padding: 20px; margin: 20px 0; border-radius: 4px; }
+        .detail-item { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #e5e7eb; }
+        .detail-label { font-weight: 600; color: #555; }
+        .detail-value { color: #333; }
+        .button { display: inline-block; padding: 14px 32px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: #ffffff; text-decoration: none; border-radius: 6px; margin: 20px 0; font-weight: 600; }
+        .footer { background-color: #f8f9fa; padding: 30px; text-align: center; color: #6c757d; font-size: 14px; }
+        .footer a { color: #10b981; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>✅ Application Submitted</h1>
+            <p>We've received your application</p>
+        </div>
+        
+        <div class="content">
+            <div class="success-icon">🎉</div>
+            
+            <div class="info-box">
+                <p>Hello <strong>{{name}}</strong>,</p>
+                <p style="margin-top: 10px;">Your MCA application has been successfully submitted. Our team will review your application and get back to you shortly.</p>
+            </div>
+
+            <h3 style="color: #10b981; margin: 25px 0 15px;">Application Details</h3>
+            <div style="background-color: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px;">
+                <div class="detail-item">
+                    <span class="detail-label">Application ID:</span>
+                    <span class="detail-value">{{uniqueId}}</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">Amount Requested:</span>
+                    <span class="detail-value">{{amountRequested}}</span>
+                </div>
+                <div class="detail-item" style="border-bottom: none;">
+                    <span class="detail-label">Submitted On:</span>
+                    <span class="detail-value">{{submittedAt}}</span>
+                </div>
+            </div>
+
+            <div style="text-align: center;">
+                <a href="{{dashboardUrl}}" class="button">Track Application Status</a>
+            </div>
+
+            <p style="color: #666; font-size: 14px; margin-top: 30px;">
+                Need help? Contact us at <a href="mailto:{{supportEmail}}" style="color: #10b981;">{{supportEmail}}</a>
+            </p>
+        </div>
+
+        <div class="footer">
+            <p><strong>Heroic Funding</strong></p>
+            <p style="margin-top: 10px; font-size: 12px; color: #999;">
+                © 2024 Heroic Funding. All rights reserved.
+            </p>
+        </div>
+    </div>
+</body>
+</html>
