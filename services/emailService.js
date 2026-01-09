@@ -32,6 +32,7 @@ class EmailService {
         sgMail.setApiKey(emailConfig.sendGridApiKey);
         this.useSendGrid = true;
         this.initialized = true;
+        this.templateIds = emailConfig.templates
         console.log('✅ Email service initialized successfully with SendGrid');
         return;
       }
