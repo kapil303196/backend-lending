@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>New Loan Application</title>
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 20px; }
+    .header { background-color: #f4f6f8; padding: 20px; border-radius: 8px; margin-bottom: 20px; text-align: center; }
+    .section { margin-bottom: 25px; border: 1px solid #e1e4e8; border-radius: 8px; overflow: hidden; }
+    .section-header { background-color: #f8f9fa; padding: 10px 15px; font-weight: bold; border-bottom: 1px solid #e1e4e8; color: #2c3e50; }
+    /* Fallback for email clients that don't support grid */
+    .table-layout { width: 100%; border-collapse: collapse; }
+    .table-layout td { vertical-align: top; padding: 8px; width: 50%; }
+    
+    .field { margin-bottom: 5px; }
+    .label { font-size: 11px; text-transform: uppercase; color: #7f8c8d; font-weight: 600; margin-bottom: 2px; }
+    .value { font-size: 14px; color: #2c3e50; font-weight: 500; }
+    .signature-box { padding: 15px; text-align: center; }
+    .footer { text-align: center; font-size: 12px; color: #95a5a6; margin-top: 30px; border-top: 1px solid #eee; padding-top: 15px; }
+    img.signature { max-width: 200px; max-height: 80px; border: 1px solid #ddd; padding: 5px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h2 style="margin:0; color:#2c3e50;">New Application Details</h2>
+    <p style="margin:5px 0 0; color:#7f8c8d;">ID: {{uniqueId}} • Status: {{status}}</p>
+  </div>
+
+  <!-- Business Information -->
+  <div class="section">
+    <div class="section-header">Reference ID: {{uniqueId}} - {{businessName}} </div>
+    <table class="table-layout">
+      <tr>
+        <td>
+          <div class="field">
+            <div class="label">Legal Business Name</div>
+            <div class="value">{{legalBusinessName}}</div>
+          </div>
+        </td>
+        <td>
+          <div class="field">
+            <div class="label">Business Email</div>
+            <div class="value">{{businessEmail}}</div>
+          </div>
+        </td>
+      </tr>
+      <tr>
+        <td>
+          <div class="field">
+            <div class="label">EIN</div>
+            <div class="value">{{ein}}</div>
+          </div>
+        </td>
+        <td>
+          <div class="field">
+            <div class="label">Business Start Date</div>
+            <div class="value">{{businessStartDate}}</div>
+          </div>
+        </td>
+      </tr>
+      <tr>
+        <td>
+          <div class="field">
+            <div class="label">Monthly Revenue</div>
+            <div class="value">${{monthlyRevenue}}</div>
+          </div>
+        </td>
+        <td>
+          <div class="field">
+            <div class="label">Address</div>
+            <div class="value">{{streetAddress}}, {{city}}, {{state}} {{zipCode}}</div>
+          </div>
+        </td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- Owner Information -->
+  <div class="section">
+    <div class="section-header">Owner Information</div>
+    <table class="table-layout">
+      <tr>
+        <td>
+          <div class="field">
+            <div class="label">Name</div>
+            <div class="value">{{ownerFirstName}} {{ownerLastName}}</div>
+          </div>
+        </td>
+        <td>
+          <div class="field">
+            <div class="label">Email</div>
+            <div class="value">{{ownerEmail}}</div>
+          </div>
+        </td>
+      </tr>
+      <tr>
+        <td>
+          <div class="field">
+            <div class="label">Phone</div>
+            <div class="value">{{ownerPhone}}</div>
+          </div>
+        </td>
+        <td>
+          <div class="field">
+            <div class="label">SSN</div>
+            <div class="value">{{ownerSSN}}</div>
+          </div>
+        </td>
+      </tr>
+      <tr>
+        <td>
+          <div class="field">
+            <div class="label">Date of Birth</div>
+            <div class="value">{{ownerDateOfBirth}}</div>
+          </div>
+        </td>
+        <td>
+          <div class="field">
+            <div class="label">Ownership</div>
+            <div class="value">{{ownershipPercent}}%</div>
+          </div>
+        </td>
+      </tr>
+      <tr>
+        <td>
+           <div class="field">
+            <div class="label">Home Address</div>
+            <div class="value">{{ownerStreetAddress}}, {{ownerCity}}, {{ownerState}} {{ownerZip}}</div>
+          </div>
+        </td>
+        <td>
+            <div class="field">
+             <div class="label">Number of Owners</div>
+             <div class="value">{{numberOfOwners}}</div>
+           </div>
+         </td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- Funding Information -->
+  <div class="section">
+    <div class="section-header">Funding Request</div>
+    <table class="table-layout">
+      <tr>
+        <td>
+          <div class="field">
+            <div class="label">Amount Requested</div>
+            <div class="value">${{amountRequested}}</div>
+          </div>
+        </td>
+        <td>
+          <div class="field">
+            <div class="label">Use of Funds</div>
+            <div class="value">{{useOfFunds}}</div>
+          </div>
+        </td>
+      </tr>
+      <tr>
+        <td>
+            <div class="field">
+              <div class="label">Has Existing Balances</div>
+              <div class="value">{{hasExistingBalances}}</div>
+            </div>
+        </td>
+        <td>
+            <div class="field">
+              <div class="label">Heroic Funding Specialist</div>
+              <div class="value">{{fundDirectSpecialist}}</div>
+            </div>
+        </td>
+      </tr>
+    </table>
+    
+    <!-- Existing Balances Section -->
+    {{#if hasExistingBalances}}
+    <div style="padding: 15px; border-top: 1px solid #eee;">
+      <div class="label" style="margin-bottom: 10px;">Existing Balances</div>
+      {{#each existingFunders}}
+      <div style="background: #f9f9f9; padding: 8px; margin-bottom: 5px; border-radius: 4px;">
+        <strong>{{this.funderName}}</strong>: ${{this.balanceRemaining}} remaining
+      </div>
+      {{/each}}
+    </div>
+    {{/if}}
+  </div>
+
+  <!-- Contact Information -->
+  <div class="section">
+    <div class="section-header">Contact Information</div>
+    <table class="table-layout">
+      <tr>
+        <td>
+          <div class="field">
+            <div class="label">Name</div>
+            <div class="value">{{contactName}}</div>
+          </div>
+        </td>
+        <td>
+          <div class="field">
+            <div class="label">Email</div>
+            <div class="value">{{contactEmail}}</div>
+          </div>
+        </td>
+      </tr>
+      <tr>
+        <td colspan="2">
+          <div class="field">
+            <div class="label">Phone</div>
+            <div class="value">{{contactPhone}}</div>
+          </div>
+        </td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- Signature -->
+  <div class="section">
+    <div class="section-header">Authorization</div>
+    <div class="signature-box">
+      {{#if signature}}
+        <img src="{{signature}}" alt="Digital Signature" class="signature" />
+      {{else}}
+        <div style="color: #999; font-style: italic;">No Signature on File</div>
+      {{/if}}
+      <div class="label" style="margin-top: 10px;">Date: {{signatureDate}}</div>
+      <p style="font-size: 11px; color: #7f8c8d; margin-top: 5px;">
+        By signing above, the applicant authorizes credit checks and agrees to all terms.
+      </p>
+    </div>
+  </div>
+
+  <!-- Submission Details -->
+  <div class="section" style="border: none;">
+      <div style="padding: 15px; background-color: #f9f9f9; border-radius: 8px; font-size: 11px; color: #777;">
+        <b>Submission Details:</b><br/>
+        Submitted At: {{submittedAt}}<br/>
+        IP Address: {{ipAddress}}
+      </div>
+  </div>
+
+  <div class="footer">
+    <p>Sent via Heroic Funding Platform</p>
+    <p>Please find the official PDF application attached.</p>
+  </div>
+</body>
+</html>

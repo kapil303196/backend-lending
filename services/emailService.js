@@ -1,7 +1,9 @@
 const nodemailer = require('nodemailer');
+const sgMail = require('@sendgrid/mail');
+const emailConfig = require('../config/email');
 
 /**
- * Production-ready Email Service (Gmail)
+ * Production-ready Email Service (SendGrid + Gmail Fallback)
  * Implements retry logic, error handling, and email templates
  */
 
@@ -9,12 +11,14 @@ class EmailService {
   constructor() {
     this.transporter = null;
     this.initialized = false;
-    this.fromEmail = process.env.EMAIL_FROM || process.env.EMAIL_USER;
-    this.fromName = process.env.EMAIL_FROM_NAME || 'Heroicfunding';
+    this.useSendGrid = false;
+    this.fromEmail = emailConfig.from.email;
+    this.fromName = emailConfig.from.name;
+    this.templateIds = emailConfig.templates || {};
   }
 
   /**
-   * Initialize Gmail transporter with OAuth2 Refresh Token
+   * Initialize Email Service (SendGrid with Gmail Fallback)
    */
   async initialize() {
     if (this.initialized) {
@@ -22,6 +26,17 @@ class EmailService {
     }
 
     try {
+      // 1. Try Initialize SendGrid
+      // 1. Try Initialize SendGrid
+      if (emailConfig.sendGridApiKey) {
+        sgMail.setApiKey(emailConfig.sendGridApiKey);
+        this.useSendGrid = true;
+        this.initialized = true;
+        console.log('✅ Email service initialized successfully with SendGrid');
+        return;
+      }
+
+      // 2. Fallback to Gmail/Nodemailer
       const { 
         EMAIL_USER, 
         GMAIL_CLIENT_ID, 
@@ -79,14 +94,14 @@ class EmailService {
         
         console.log('🔑 Using Gmail App Password (fallback)');
       } else {
-        throw new Error('Gmail credentials not configured. Set either OAuth2 credentials (GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN) or EMAIL_PASSWORD in .env');
+        throw new Error('Email credentials not configured. Set SENDGRID_API_KEY or Gmail credentials in .env');
       }
 
       // Verify transporter configuration with timeout
       // Skip verification in serverless environments (Vercel) to avoid timeout issues
       const isServerless = process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME;
       
-      if (!isServerless) {
+      if (!isServerless && this.transporter) {
         try {
           // Set a timeout for verification (5 seconds)
           const verifyPromise = this.transporter.verify();
@@ -95,7 +110,7 @@ class EmailService {
           );
           
           await Promise.race([verifyPromise, timeoutPromise]);
-          console.log('✅ Email service verified successfully');
+          console.log('✅ Email service verified successfully (Nodemailer)');
         } catch (verifyError) {
           console.warn('⚠️  Email service verification failed (will still attempt to send):', verifyError.message);
           // Don't throw - allow sending emails even if verification fails
@@ -134,6 +149,101 @@ class EmailService {
       console.warn('⚠️  Email service initialization had issues, attempting to send anyway:', initError.message);
     }
 
+    if (this.useSendGrid) {
+      return this.sendWithSendGrid(options, retries);
+    } else {
+      return this.sendWithNodemailer(options, retries);
+    }
+  }
+
+  /**
+  /**
+   * Send using SendGrid
+   */
+  async sendWithSendGrid(options, retries = 3) {
+    // Transform attachments for SendGrid
+    const attachments = (options.attachments || []).map(att => {
+      // If content is a Buffer, convert to base64
+      let content = att.content;
+      if (Buffer.isBuffer(content)) {
+        content = content.toString('base64');
+      } else if (typeof content === 'string' && !this.isBase64(content)) {
+        // Assume it's utf-8 text if string and not base64, encode it
+        content = Buffer.from(content).toString('base64');
+      }
+      
+      return {
+        content: content,
+        filename: att.filename,
+        type: att.contentType || 'application/octet-stream',
+        disposition: att.disposition || 'attachment',
+        content_id: att.content_id
+      };
+    });
+
+    const msg = {
+      to: options.to,
+      from: {
+        email: this.fromEmail,
+        name: this.fromName
+      },
+      attachments: attachments.length > 0 ? attachments : undefined
+    };
+
+    // Handle Dynamic Templates vs Standard HTML
+    if (options.templateId) {
+      msg.templateId = options.templateId;
+      msg.dynamicTemplateData = options.dynamicTemplateData || {};
+      // Note: Subject is usually defined in the template, but can be overridden if needed via dynamic data
+    } else {
+      msg.subject = options.subject;
+      msg.text = options.text || this.stripHtml(options.html);
+      msg.html = options.html;
+    }
+
+    if (options.cc) msg.cc = options.cc;
+    if (options.bcc) msg.bcc = options.bcc;
+
+    let lastError;
+    // ... retry logic (kept same)
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        const response = await sgMail.send(msg);
+        console.log(`✅ Email sent via SendGrid to ${options.to}`);
+        return {
+          success: true,
+          messageId: response[0].headers['x-message-id'],
+          response: response[0]
+        };
+      } catch (error) {
+        lastError = error;
+        console.error(`❌ SendGrid send attempt ${attempt}/${retries} failed:`, error.message);
+        if (error.response) {
+          console.error(error.response.body);
+        }
+        
+        if (attempt < retries) {
+          const waitTime = Math.min(Math.pow(2, attempt) * 1000, 5000);
+          await this.sleep(waitTime);
+        }
+      }
+    }
+    throw lastError;
+  }
+
+  isBase64(str) {
+    if (str ==='' || str.trim() ===''){ return false; }
+    try {
+        return btoa(atob(str)) == str;
+    } catch (err) {
+        return false;
+    }
+  }
+
+  /**
+   * Send using Nodemailer (Legacy/Fallback)
+   */
+  async sendWithNodemailer(options, retries = 3) {
     // Check if transporter exists
     if (!this.transporter) {
       throw new Error('Email transporter not available. Please check your email configuration.');
@@ -207,6 +317,23 @@ class EmailService {
   async sendWelcomeEmail(userEmail, userData) {
     const { name, email, password, uniqueId } = userData;
 
+    // Use SendGrid Dynamic Template if ID is available
+    if (this.useSendGrid && this.templateIds.welcome) {
+      return await this.sendEmail({
+        to: userEmail,
+        templateId: this.templateIds.welcome,
+        dynamicTemplateData: {
+          name: name || 'Valued Customer',
+          email: email,
+          password: password,
+          uniqueId: uniqueId,
+          loginUrl: process.env.FRONTEND_URL || 'https://your-app.com/login',
+          supportEmail: process.env.SUPPORT_EMAIL || 'support@logicspark.com'
+        }
+      });
+    }
+
+    // Fallback to HTML Template
     const html = this.getWelcomeEmailTemplate({
       name: name || 'Valued Customer',
       email: email,
@@ -228,6 +355,22 @@ class EmailService {
    */
   async sendApplicationConfirmation(userEmail, applicationData) {
     const { name, uniqueId, amountRequested, submittedAt } = applicationData;
+
+    // Use SendGrid Dynamic Template if ID is available
+    if (this.useSendGrid && this.templateIds.applicationConfirmation) {
+      return await this.sendEmail({
+        to: userEmail,
+        templateId: this.templateIds.applicationConfirmation,
+        dynamicTemplateData: {
+          name: name || 'Valued Customer',
+          uniqueId: uniqueId,
+          amountRequested: amountRequested ? `$${amountRequested.toLocaleString()}` : 'N/A',
+          submittedAt: new Date(submittedAt || Date.now()).toLocaleDateString(),
+          dashboardUrl: process.env.FRONTEND_URL || 'https://your-app.com/dashboard',
+          supportEmail: process.env.SUPPORT_EMAIL || 'support@logicspark.com'
+        }
+      });
+    }
 
     const html = this.getApplicationConfirmationTemplate({
       name: name || 'Valued Customer',
@@ -251,6 +394,22 @@ class EmailService {
   async sendStatusUpdateEmail(userEmail, statusData) {
     const { name, uniqueId, status, message } = statusData;
 
+    // Use SendGrid Dynamic Template if ID is available
+    if (this.useSendGrid && this.templateIds.statusUpdate) {
+      return await this.sendEmail({
+        to: userEmail,
+        templateId: this.templateIds.statusUpdate,
+        dynamicTemplateData: {
+          name: name || 'Valued Customer',
+          uniqueId: uniqueId,
+          status: status.toUpperCase(),
+          message: message,
+          dashboardUrl: process.env.FRONTEND_URL || 'https://your-app.com/dashboard',
+          supportEmail: process.env.SUPPORT_EMAIL || 'support@logicspark.com'
+        }
+      });
+    }
+
     const html = this.getStatusUpdateTemplate({
       name: name || 'Valued Customer',
       uniqueId: uniqueId,
@@ -271,6 +430,47 @@ class EmailService {
       to: userEmail,
       subject: `${statusEmojis[status] || '📧'} Application Status Update - ${status.toUpperCase()}`,
       html: html
+    });
+  }
+
+  /**
+   * Send application to lender
+   */
+  /**
+   * Send application to lender
+   */
+  async sendLenderApplication(lender, applicationData, attachments = []) {
+    const { email, name: lenderName } = lender;
+    const { businessName, uniqueId } = applicationData;
+
+    // Use SendGrid Dynamic Template if ID is available
+    if (this.useSendGrid && this.templateIds.lenderApplication) {
+      return await this.sendEmail({
+        to: email,
+        templateId: this.templateIds.lenderApplication,
+        dynamicTemplateData: {
+          lenderName: lenderName || 'Lender',
+          date: new Date().toLocaleDateString(),
+          supportEmail: process.env.SUPPORT_EMAIL || 'support@logicspark.com',
+          ...applicationData
+        },
+        attachments: attachments
+      });
+    }
+
+    // Fallback HTML for Lender
+    const html = `
+      <h2>New Application: ${businessName}</h2>
+      <p>Hello ${lenderName || 'Lender'},</p>
+      <p>Please find the attached application PDF and documents for <strong>${businessName}</strong> (ID: ${uniqueId}).</p>
+      <p>Thank you.</p>
+    `;
+
+    return await this.sendEmail({
+      to: email,
+      subject: `New Application: ${businessName || 'Heroic Funding Application'}`,
+      html: html,
+      attachments: attachments
     });
   }
 

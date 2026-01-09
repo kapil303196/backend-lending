@@ -15,6 +15,7 @@
   "description": "",
   "dependencies": {
     "@googlemaps/google-maps-services-js": "^3.4.2",
+    "@sendgrid/mail": "^8.1.6",
     "aws-sdk": "^2.1692.0",
     "axios": "^1.13.2",
     "bcryptjs": "^3.0.3",

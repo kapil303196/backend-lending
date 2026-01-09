@@ -16,6 +16,7 @@ const authRoutes = require('./routes/authRoutes');
 const adminConfigRoutes = require('./routes/adminConfigRoutes');
 const dealerRoutes = require('./routes/dealerRoutes');
 const pdfRoutes = require('./routes/pdfRoutes');
+const lenderEmailRoutes = require('./routes/lenderEmailRoutes');
 const { auditMiddleware } = require('./middleware/auditMiddleware');
 
 const app = express();
@@ -108,6 +109,7 @@ app.use('/api/address', addressRoutes);
 app.use('/api/config', adminConfigRoutes);
 app.use('/api/dealer', dealerRoutes);
 app.use('/api/pdf', pdfRoutes);
+app.use('/api/lenders', lenderEmailRoutes);
 
 /**
  * @swagger
