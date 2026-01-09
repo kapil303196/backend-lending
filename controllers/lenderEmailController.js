@@ -11,7 +11,8 @@ exports.createLenderEmail = async (req, res) => {
     const newLender = await LenderEmail.create({
       name,
       email,
-      description
+      description,
+      createdBy: req.user.id
     });
     
     res.status(201).json({
@@ -29,7 +30,11 @@ exports.createLenderEmail = async (req, res) => {
 // Get all lender emails
 exports.getAllLenderEmails = async (req, res) => {
   try {
-    const lenders = await LenderEmail.find({ isActive: true }).sort({ createdAt: -1 });
+    // Only return lenders created by the logged-in admin
+    const lenders = await LenderEmail.find({ 
+      isActive: true,
+      createdBy: req.user.id 
+    }).sort({ createdAt: -1 });
     
     res.status(200).json({
       success: true,
@@ -49,7 +54,8 @@ exports.updateLenderEmail = async (req, res) => {
     const { id } = req.params;
     const { name, email, description } = req.body;
     
-    const lender = await LenderEmail.findById(id);
+    // Find lender ensuring it belongs to the current user
+    const lender = await LenderEmail.findOne({ _id: id, createdBy: req.user.id });
     
     if (!lender) {
       return res.status(404).json({
@@ -82,7 +88,11 @@ exports.deleteLenderEmail = async (req, res) => {
   try {
     const { id } = req.params;
     
-    const lender = await LenderEmail.findByIdAndUpdate(id, { isActive: false }, { new: true });
+    const lender = await LenderEmail.findOneAndUpdate(
+      { _id: id, createdBy: req.user.id },
+      { isActive: false },
+      { new: true }
+    );
     
     if (!lender) {
       return res.status(404).json({
@@ -223,7 +233,8 @@ exports.sendApplicationToLender = async (req, res) => {
     
     for (const lenderId of lenderIds) {
       try {
-        const lender = await LenderEmail.findById(lenderId);
+        // Ensure we only send to lenders owned by this admin
+        const lender = await LenderEmail.findOne({ _id: lenderId, createdBy: req.user.id });
         if (lender) {
             await emailService.sendLenderApplication(
             lender,
