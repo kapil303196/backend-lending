@@ -280,3 +280,5 @@ function calculateDataCompleteness(data) {
   return Math.round((filledFields.length / requiredFields.length) * 100);
 }
 
+
+
