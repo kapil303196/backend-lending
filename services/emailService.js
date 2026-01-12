@@ -1,6 +1,6 @@
-const nodemailer = require('nodemailer');
-const sgMail = require('@sendgrid/mail');
-const emailConfig = require('../config/email');
+const nodemailer = require("nodemailer");
+const sgMail = require("@sendgrid/mail");
+const emailConfig = require("../config/email");
 
 /**
  * Production-ready Email Service (SendGrid + Gmail Fallback)
@@ -32,31 +32,36 @@ class EmailService {
         sgMail.setApiKey(emailConfig.sendGridApiKey);
         this.useSendGrid = true;
         this.initialized = true;
-        this.templateIds = emailConfig.templates
-        console.log('✅ Email service initialized successfully with SendGrid');
+        this.templateIds = emailConfig.templates;
+        console.log("✅ Email service initialized successfully with SendGrid");
         return;
       }
 
       // 2. Fallback to Gmail/Nodemailer
-      const { 
-        EMAIL_USER, 
-        GMAIL_CLIENT_ID, 
-        GMAIL_CLIENT_SECRET, 
-        GMAIL_REFRESH_TOKEN 
+      const {
+        EMAIL_USER,
+        GMAIL_CLIENT_ID,
+        GMAIL_CLIENT_SECRET,
+        GMAIL_REFRESH_TOKEN,
       } = process.env;
 
       // Check if OAuth2 credentials are provided
-      if (GMAIL_CLIENT_ID && GMAIL_CLIENT_SECRET && GMAIL_REFRESH_TOKEN && EMAIL_USER) {
+      if (
+        GMAIL_CLIENT_ID &&
+        GMAIL_CLIENT_SECRET &&
+        GMAIL_REFRESH_TOKEN &&
+        EMAIL_USER
+      ) {
         // Use OAuth2 with refresh token (recommended for production)
         this.transporter = nodemailer.createTransport({
-          service: 'gmail',
+          service: "gmail",
           auth: {
-            type: 'OAuth2',
+            type: "OAuth2",
             user: EMAIL_USER,
             clientId: GMAIL_CLIENT_ID,
             clientSecret: GMAIL_CLIENT_SECRET,
             refreshToken: GMAIL_REFRESH_TOKEN,
-            accessToken: undefined // Will be generated automatically
+            accessToken: undefined, // Will be generated automatically
           },
           // Connection settings optimized for serverless (Vercel)
           connectionTimeout: 10000, // 10 seconds
@@ -67,18 +72,18 @@ class EmailService {
           // Retry settings
           retry: {
             attempts: 2,
-            delay: 1000
-          }
+            delay: 1000,
+          },
         });
-        
-        console.log('🔐 Using Gmail OAuth2 with refresh token');
+
+        console.log("🔐 Using Gmail OAuth2 with refresh token");
       } else if (process.env.EMAIL_PASSWORD && EMAIL_USER) {
         // Fallback to App Password (for development)
         this.transporter = nodemailer.createTransport({
-          service: 'gmail',
+          service: "gmail",
           auth: {
             user: EMAIL_USER,
-            pass: process.env.EMAIL_PASSWORD
+            pass: process.env.EMAIL_PASSWORD,
           },
           // Connection settings optimized for serverless (Vercel)
           connectionTimeout: 10000, // 10 seconds
@@ -89,47 +94,59 @@ class EmailService {
           // Retry settings
           retry: {
             attempts: 2,
-            delay: 1000
-          }
+            delay: 1000,
+          },
         });
-        
-        console.log('🔑 Using Gmail App Password (fallback)');
+
+        console.log("🔑 Using Gmail App Password (fallback)");
       } else {
-        throw new Error('Email credentials not configured. Set SENDGRID_API_KEY or Gmail credentials in .env');
+        throw new Error(
+          "Email credentials not configured. Set SENDGRID_API_KEY or Gmail credentials in .env"
+        );
       }
 
       // Verify transporter configuration with timeout
       // Skip verification in serverless environments (Vercel) to avoid timeout issues
-      const isServerless = process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME;
-      
+      const isServerless =
+        process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME;
+
       if (!isServerless && this.transporter) {
         try {
           // Set a timeout for verification (5 seconds)
           const verifyPromise = this.transporter.verify();
-          const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Verification timeout')), 5000)
+          const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("Verification timeout")), 5000)
           );
-          
+
           await Promise.race([verifyPromise, timeoutPromise]);
-          console.log('✅ Email service verified successfully (Nodemailer)');
+          console.log("✅ Email service verified successfully (Nodemailer)");
         } catch (verifyError) {
-          console.warn('⚠️  Email service verification failed (will still attempt to send):', verifyError.message);
+          console.warn(
+            "⚠️  Email service verification failed (will still attempt to send):",
+            verifyError.message
+          );
           // Don't throw - allow sending emails even if verification fails
         }
       } else {
-        console.log('⚠️  Skipping email verification in serverless environment');
+        console.log(
+          "⚠️  Skipping email verification in serverless environment"
+        );
       }
-      
+
       this.initialized = true;
-      console.log('✅ Email service initialized successfully with Gmail');
+      console.log("✅ Email service initialized successfully with Gmail");
     } catch (error) {
-      console.error('❌ Email service initialization failed:', error.message);
+      console.error("❌ Email service initialization failed:", error.message);
       // In serverless, don't throw - allow the service to be used anyway
       // The actual send will handle errors
       if (!process.env.VERCEL && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
-        throw new Error(`Email service initialization failed: ${error.message}`);
+        throw new Error(
+          `Email service initialization failed: ${error.message}`
+        );
       } else {
-        console.warn('⚠️  Continuing in serverless mode despite initialization warning');
+        console.warn(
+          "⚠️  Continuing in serverless mode despite initialization warning"
+        );
         this.initialized = true; // Mark as initialized anyway
       }
     }
@@ -147,7 +164,10 @@ class EmailService {
       }
     } catch (initError) {
       // If initialization fails, log but don't throw - try to send anyway
-      console.warn('⚠️  Email service initialization had issues, attempting to send anyway:', initError.message);
+      console.warn(
+        "⚠️  Email service initialization had issues, attempting to send anyway:",
+        initError.message
+      );
     }
 
     if (this.useSendGrid) {
@@ -158,27 +178,75 @@ class EmailService {
   }
 
   /**
+   * Send marketing email using SendGrid template
+   */
+  async sendMarketingTemplateEmail(to, uniqueId) {
+    const backendUrl =
+      process.env.BACKEND_DEPLOYED_URL ||
+      `http://localhost:${process.env.PORT || 5000}`;
+    const frontendUrl =
+      process.env.FRONTEND_DEPLOYED_URL || "http://localhost:8080";
+
+    // Use SendGrid Dynamic Template if ID is available
+    if (this.useSendGrid && this.templateIds.marketingTemplate) {
+      console.log("✅ Using SendGrid Dynamic Template for marketing email");
+      return await this.sendEmail({
+        to: to,
+        templateId: this.templateIds.marketingTemplate,
+        dynamicTemplateData: {
+          BACKEND_URL: backendUrl,
+          FRONTEND_URL: frontendUrl,
+          uniqueId: uniqueId,
+          supportEmail: process.env.SUPPORT_EMAIL || "support@logicspark.com",
+        },
+      });
+    }
+
+    // Fallback to manual HTML if template ID is missing
+    const fs = require("fs").promises;
+    const path = require("path");
+    const filePath = path.join(
+      __dirname,
+      "..",
+      "files",
+      "sendgrid-heroic-marketing.html"
+    );
+    let htmlContent = await fs.readFile(filePath, "utf8");
+
+    htmlContent = htmlContent
+      .replace(/{{BACKEND_URL}}/g, backendUrl)
+      .replace(/{{FRONTEND_URL}}/g, frontendUrl)
+      .replace(/{{uniqueId}}/g, uniqueId);
+
+    return await this.sendEmail({
+      to,
+      subject: "Heroic Funding - Up to $10,000,000 for Your Business",
+      html: htmlContent,
+    });
+  }
+
+  /**
   /**
    * Send using SendGrid
    */
   async sendWithSendGrid(options, retries = 3) {
     // Transform attachments for SendGrid
-    const attachments = (options.attachments || []).map(att => {
+    const attachments = (options.attachments || []).map((att) => {
       // If content is a Buffer, convert to base64
       let content = att.content;
       if (Buffer.isBuffer(content)) {
-        content = content.toString('base64');
-      } else if (typeof content === 'string' && !this.isBase64(content)) {
+        content = content.toString("base64");
+      } else if (typeof content === "string" && !this.isBase64(content)) {
         // Assume it's utf-8 text if string and not base64, encode it
-        content = Buffer.from(content).toString('base64');
+        content = Buffer.from(content).toString("base64");
       }
-      
+
       return {
         content: content,
         filename: att.filename,
-        type: att.contentType || 'application/octet-stream',
-        disposition: att.disposition || 'attachment',
-        content_id: att.content_id
+        type: att.contentType || "application/octet-stream",
+        disposition: att.disposition || "attachment",
+        content_id: att.content_id,
       };
     });
 
@@ -186,9 +254,9 @@ class EmailService {
       to: options.to,
       from: {
         email: this.fromEmail,
-        name: this.fromName
+        name: this.fromName,
       },
-      attachments: attachments.length > 0 ? attachments : undefined
+      attachments: attachments.length > 0 ? attachments : undefined,
     };
 
     // Handle Dynamic Templates vs Standard HTML
@@ -213,16 +281,19 @@ class EmailService {
         console.log(`✅ Email sent via SendGrid to ${options.to}`);
         return {
           success: true,
-          messageId: response[0].headers['x-message-id'],
-          response: response[0]
+          messageId: response[0].headers["x-message-id"],
+          response: response[0],
         };
       } catch (error) {
         lastError = error;
-        console.error(`❌ SendGrid send attempt ${attempt}/${retries} failed:`, error.message);
+        console.error(
+          `❌ SendGrid send attempt ${attempt}/${retries} failed:`,
+          error.message
+        );
         if (error.response) {
           console.error(error.response.body);
         }
-        
+
         if (attempt < retries) {
           const waitTime = Math.min(Math.pow(2, attempt) * 1000, 5000);
           await this.sleep(waitTime);
@@ -233,11 +304,13 @@ class EmailService {
   }
 
   isBase64(str) {
-    if (str ==='' || str.trim() ===''){ return false; }
+    if (str === "" || str.trim() === "") {
+      return false;
+    }
     try {
-        return btoa(atob(str)) == str;
+      return btoa(atob(str)) == str;
     } catch (err) {
-        return false;
+      return false;
     }
   }
 
@@ -247,7 +320,9 @@ class EmailService {
   async sendWithNodemailer(options, retries = 3) {
     // Check if transporter exists
     if (!this.transporter) {
-      throw new Error('Email transporter not available. Please check your email configuration.');
+      throw new Error(
+        "Email transporter not available. Please check your email configuration."
+      );
     }
 
     const mailOptions = {
@@ -256,7 +331,7 @@ class EmailService {
       subject: options.subject,
       html: options.html,
       text: options.text || this.stripHtml(options.html),
-      attachments: options.attachments || []
+      attachments: options.attachments || [],
     };
 
     // Add CC and BCC if provided
@@ -268,36 +343,48 @@ class EmailService {
       try {
         // Add timeout wrapper for serverless environments
         const sendPromise = this.transporter.sendMail(mailOptions);
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Email send timeout')), 15000) // 15 second timeout
+        const timeoutPromise = new Promise(
+          (_, reject) =>
+            setTimeout(() => reject(new Error("Email send timeout")), 15000) // 15 second timeout
         );
-        
+
         const info = await Promise.race([sendPromise, timeoutPromise]);
-        console.log(`✅ Email sent successfully to ${options.to} (Attempt ${attempt}/${retries})`);
+        console.log(
+          `✅ Email sent successfully to ${options.to} (Attempt ${attempt}/${retries})`
+        );
         console.log(`Message ID: ${info.messageId}`);
-        
+
         return {
           success: true,
           messageId: info.messageId,
-          response: info.response
+          response: info.response,
         };
       } catch (error) {
         lastError = error;
-        console.error(`❌ Email send attempt ${attempt}/${retries} failed:`, error.message);
-        
+        console.error(
+          `❌ Email send attempt ${attempt}/${retries} failed:`,
+          error.message
+        );
+
         // If it's a connection error and we're in serverless, try to reinitialize
-        if ((error.message.includes('socket') || error.message.includes('TLS') || error.message.includes('connection')) && 
-            (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) && 
-            attempt < retries) {
-          console.log('🔄 Connection error detected, reinitializing transporter...');
+        if (
+          (error.message.includes("socket") ||
+            error.message.includes("TLS") ||
+            error.message.includes("connection")) &&
+          (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) &&
+          attempt < retries
+        ) {
+          console.log(
+            "🔄 Connection error detected, reinitializing transporter..."
+          );
           this.initialized = false;
           try {
             await this.initialize();
           } catch (reinitError) {
-            console.warn('⚠️  Reinitialization failed:', reinitError.message);
+            console.warn("⚠️  Reinitialization failed:", reinitError.message);
           }
         }
-        
+
         if (attempt < retries) {
           // Exponential backoff: wait 2^attempt seconds (max 5 seconds)
           const waitTime = Math.min(Math.pow(2, attempt) * 1000, 5000);
@@ -308,7 +395,9 @@ class EmailService {
     }
 
     // All retries failed
-    console.error(`❌ Failed to send email to ${options.to} after ${retries} attempts`);
+    console.error(
+      `❌ Failed to send email to ${options.to} after ${retries} attempts`
+    );
     throw lastError;
   }
 
@@ -324,30 +413,30 @@ class EmailService {
         to: userEmail,
         templateId: this.templateIds.welcome,
         dynamicTemplateData: {
-          name: name || 'Valued Customer',
+          name: name || "Valued Customer",
           email: email,
           password: password,
           uniqueId: uniqueId,
-          loginUrl: process.env.FRONTEND_URL || 'https://your-app.com/login',
-          supportEmail: process.env.SUPPORT_EMAIL || 'support@logicspark.com'
-        }
+          loginUrl: process.env.FRONTEND_URL || "https://your-app.com/login",
+          supportEmail: process.env.SUPPORT_EMAIL || "support@logicspark.com",
+        },
       });
     }
 
     // Fallback to HTML Template
     const html = this.getWelcomeEmailTemplate({
-      name: name || 'Valued Customer',
+      name: name || "Valued Customer",
       email: email,
       password: password,
       uniqueId: uniqueId,
-      loginUrl: process.env.FRONTEND_URL || 'https://your-app.com/login',
-      supportEmail: process.env.SUPPORT_EMAIL || 'support@logicspark.com'
+      loginUrl: process.env.FRONTEND_URL || "https://your-app.com/login",
+      supportEmail: process.env.SUPPORT_EMAIL || "support@logicspark.com",
     });
 
     return await this.sendEmail({
       to: userEmail,
-      subject: '🎉 Welcome to Heroic Funding - Your Account Details',
-      html: html
+      subject: "🎉 Welcome to Heroic Funding - Your Account Details",
+      html: html,
     });
   }
 
@@ -363,29 +452,33 @@ class EmailService {
         to: userEmail,
         templateId: this.templateIds.applicationConfirmation,
         dynamicTemplateData: {
-          name: name || 'Valued Customer',
+          name: name || "Valued Customer",
           uniqueId: uniqueId,
-          amountRequested: amountRequested ? `$${amountRequested.toLocaleString()}` : 'N/A',
+          amountRequested: amountRequested
+            ? `$${amountRequested.toLocaleString()}`
+            : "N/A",
           submittedAt: new Date(submittedAt || Date.now()).toLocaleDateString(),
-          dashboardUrl: process.env.FRONTEND_URL || 'https://your-app.com/dashboard',
-          supportEmail: process.env.SUPPORT_EMAIL || 'support@logicspark.com'
-        }
+          dashboardUrl:
+            process.env.FRONTEND_URL || "https://your-app.com/dashboard",
+          supportEmail: process.env.SUPPORT_EMAIL || "support@logicspark.com",
+        },
       });
     }
 
     const html = this.getApplicationConfirmationTemplate({
-      name: name || 'Valued Customer',
+      name: name || "Valued Customer",
       uniqueId: uniqueId,
       amountRequested: amountRequested,
       submittedAt: submittedAt || new Date(),
-      dashboardUrl: process.env.FRONTEND_URL || 'https://your-app.com/dashboard',
-      supportEmail: process.env.SUPPORT_EMAIL || 'support@logicspark.com'
+      dashboardUrl:
+        process.env.FRONTEND_URL || "https://your-app.com/dashboard",
+      supportEmail: process.env.SUPPORT_EMAIL || "support@logicspark.com",
     });
 
     return await this.sendEmail({
       to: userEmail,
-      subject: '✅ Application Submitted Successfully - Heroic Funding',
-      html: html
+      subject: "✅ Application Submitted Successfully - Heroic Funding",
+      html: html,
     });
   }
 
@@ -401,36 +494,40 @@ class EmailService {
         to: userEmail,
         templateId: this.templateIds.statusUpdate,
         dynamicTemplateData: {
-          name: name || 'Valued Customer',
+          name: name || "Valued Customer",
           uniqueId: uniqueId,
           status: status.toUpperCase(),
           message: message,
-          dashboardUrl: process.env.FRONTEND_URL || 'https://your-app.com/dashboard',
-          supportEmail: process.env.SUPPORT_EMAIL || 'support@logicspark.com'
-        }
+          dashboardUrl:
+            process.env.FRONTEND_URL || "https://your-app.com/dashboard",
+          supportEmail: process.env.SUPPORT_EMAIL || "support@logicspark.com",
+        },
       });
     }
 
     const html = this.getStatusUpdateTemplate({
-      name: name || 'Valued Customer',
+      name: name || "Valued Customer",
       uniqueId: uniqueId,
       status: status,
       message: message,
-      dashboardUrl: process.env.FRONTEND_URL || 'https://your-app.com/dashboard',
-      supportEmail: process.env.SUPPORT_EMAIL || 'support@logicspark.com'
+      dashboardUrl:
+        process.env.FRONTEND_URL || "https://your-app.com/dashboard",
+      supportEmail: process.env.SUPPORT_EMAIL || "support@logicspark.com",
     });
 
     const statusEmojis = {
-      approved: '✅',
-      rejected: '❌',
-      pending: '⏳',
-      submitted: '📝'
+      approved: "✅",
+      rejected: "❌",
+      pending: "⏳",
+      submitted: "📝",
     };
 
     return await this.sendEmail({
       to: userEmail,
-      subject: `${statusEmojis[status] || '📧'} Application Status Update - ${status.toUpperCase()}`,
-      html: html
+      subject: `${
+        statusEmojis[status] || "📧"
+      } Application Status Update - ${status.toUpperCase()}`,
+      html: html,
     });
   }
 
@@ -450,28 +547,30 @@ class EmailService {
         to: email,
         templateId: this.templateIds.lenderApplication,
         dynamicTemplateData: {
-          lenderName: lenderName || 'Lender',
+          lenderName: lenderName || "Lender",
           date: new Date().toLocaleDateString(),
-          supportEmail: process.env.SUPPORT_EMAIL || 'support@logicspark.com',
-          ...applicationData
+          supportEmail: process.env.SUPPORT_EMAIL || "support@logicspark.com",
+          ...applicationData,
         },
-        attachments: attachments
+        attachments: attachments,
       });
     }
 
     // Fallback HTML for Lender
     const html = `
       <h2>New Application: ${businessName}</h2>
-      <p>Hello ${lenderName || 'Lender'},</p>
+      <p>Hello ${lenderName || "Lender"},</p>
       <p>Please find the attached application PDF and documents for <strong>${businessName}</strong> (ID: ${uniqueId}).</p>
       <p>Thank you.</p>
     `;
 
     return await this.sendEmail({
       to: email,
-      subject: `New Application: ${businessName || 'Heroic Funding Application'}`,
+      subject: `New Application: ${
+        businessName || "Heroic Funding Application"
+      }`,
       html: html,
-      attachments: attachments
+      attachments: attachments,
     });
   }
 
@@ -543,7 +642,9 @@ class EmailService {
             </div>
 
             <div style="text-align: center;">
-                <a href="${data.loginUrl}" class="button">Login to Your Account</a>
+                <a href="${
+                  data.loginUrl
+                }" class="button">Login to Your Account</a>
             </div>
 
             <div class="divider"></div>
@@ -612,20 +713,34 @@ class EmailService {
                 </div>
                 <div class="detail-item">
                     <span class="detail-label">Amount Requested:</span>
-                    <span class="detail-value">$${data.amountRequested ? data.amountRequested.toLocaleString() : 'N/A'}</span>
+                    <span class="detail-value">$${
+                      data.amountRequested
+                        ? data.amountRequested.toLocaleString()
+                        : "N/A"
+                    }</span>
                 </div>
                 <div class="detail-item" style="border-bottom: none;">
                     <span class="detail-label">Submitted On:</span>
-                    <span class="detail-value">${new Date(data.submittedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
+                    <span class="detail-value">${new Date(
+                      data.submittedAt
+                    ).toLocaleDateString("en-US", {
+                      year: "numeric",
+                      month: "long",
+                      day: "numeric",
+                    })}</span>
                 </div>
             </div>
 
             <div style="text-align: center;">
-                <a href="${data.dashboardUrl}" class="button">Track Application Status</a>
+                <a href="${
+                  data.dashboardUrl
+                }" class="button">Track Application Status</a>
             </div>
 
             <p style="color: #666; font-size: 14px; margin-top: 30px;">
-                Need help? Contact us at <a href="mailto:${data.supportEmail}" style="color: #10b981;">${data.supportEmail}</a>
+                Need help? Contact us at <a href="mailto:${
+                  data.supportEmail
+                }" style="color: #10b981;">${data.supportEmail}</a>
             </p>
         </div>
 
@@ -646,10 +761,10 @@ class EmailService {
    */
   getStatusUpdateTemplate(data) {
     const statusColors = {
-      approved: { bg: '#10b981', light: '#d1fae5', text: '#065f46' },
-      rejected: { bg: '#ef4444', light: '#fee2e2', text: '#991b1b' },
-      pending: { bg: '#f59e0b', light: '#fef3c7', text: '#92400e' },
-      submitted: { bg: '#3b82f6', light: '#dbeafe', text: '#1e40af' }
+      approved: { bg: "#10b981", light: "#d1fae5", text: "#065f46" },
+      rejected: { bg: "#ef4444", light: "#fee2e2", text: "#991b1b" },
+      pending: { bg: "#f59e0b", light: "#fef3c7", text: "#92400e" },
+      submitted: { bg: "#3b82f6", light: "#dbeafe", text: "#1e40af" },
     };
 
     const color = statusColors[data.status] || statusColors.pending;
@@ -665,12 +780,22 @@ class EmailService {
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; background-color: #f4f4f4; }
         .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; }
-        .header { background: ${color.bg}; padding: 40px 20px; text-align: center; }
+        .header { background: ${
+          color.bg
+        }; padding: 40px 20px; text-align: center; }
         .header h1 { color: #ffffff; font-size: 28px; margin-bottom: 10px; }
         .content { padding: 40px 30px; }
-        .status-badge { display: inline-block; padding: 8px 16px; background-color: ${color.light}; color: ${color.text}; border-radius: 20px; font-weight: 600; text-transform: uppercase; font-size: 14px; }
-        .info-box { background-color: ${color.light}; border-left: 4px solid ${color.bg}; padding: 20px; margin: 20px 0; border-radius: 4px; }
-        .button { display: inline-block; padding: 14px 32px; background: ${color.bg}; color: #ffffff; text-decoration: none; border-radius: 6px; margin: 20px 0; font-weight: 600; }
+        .status-badge { display: inline-block; padding: 8px 16px; background-color: ${
+          color.light
+        }; color: ${
+      color.text
+    }; border-radius: 20px; font-weight: 600; text-transform: uppercase; font-size: 14px; }
+        .info-box { background-color: ${color.light}; border-left: 4px solid ${
+      color.bg
+    }; padding: 20px; margin: 20px 0; border-radius: 4px; }
+        .button { display: inline-block; padding: 14px 32px; background: ${
+          color.bg
+        }; color: #ffffff; text-decoration: none; border-radius: 6px; margin: 20px 0; font-weight: 600; }
         .footer { background-color: #f8f9fa; padding: 30px; text-align: center; color: #6c757d; font-size: 14px; }
     </style>
 </head>
@@ -689,7 +814,11 @@ class EmailService {
 
             <div class="info-box">
                 <p><strong>Application ID:</strong> ${data.uniqueId}</p>
-                ${data.message ? `<p style="margin-top: 15px;">${data.message}</p>` : ''}
+                ${
+                  data.message
+                    ? `<p style="margin-top: 15px;">${data.message}</p>`
+                    : ""
+                }
             </div>
 
             <div style="text-align: center;">
@@ -697,7 +826,9 @@ class EmailService {
             </div>
 
             <p style="color: #666; font-size: 14px; margin-top: 30px;">
-                Questions? Contact us at <a href="mailto:${data.supportEmail}" style="color: ${color.bg};">${data.supportEmail}</a>
+                Questions? Contact us at <a href="mailto:${
+                  data.supportEmail
+                }" style="color: ${color.bg};">${data.supportEmail}</a>
             </p>
         </div>
 
@@ -717,14 +848,17 @@ class EmailService {
    * Strip HTML tags from string
    */
   stripHtml(html) {
-    return html.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+    return html
+      .replace(/<[^>]*>/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
   }
 
   /**
    * Sleep utility for retry delays
    */
   sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   /**
@@ -734,7 +868,7 @@ class EmailService {
     if (this.transporter) {
       this.transporter.close();
       this.initialized = false;
-      console.log('Email service closed');
+      console.log("Email service closed");
     }
   }
 }

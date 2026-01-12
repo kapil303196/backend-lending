@@ -1,32 +1,33 @@
-const express = require('express');
-const cors = require('cors');
-const path = require('path');
-const mongoose = require('mongoose');
-require('dotenv').config();
-const swaggerUi = require('swagger-ui-express');
-const swaggerSpec = require('./config/swagger');
+const express = require("express");
+const cors = require("cors");
+const path = require("path");
+const mongoose = require("mongoose");
+require("dotenv").config();
+const swaggerUi = require("swagger-ui-express");
+const swaggerSpec = require("./config/swagger");
 
-const connectDB = require('./config/database');
-const emailService = require('./services/emailService');
-const mcaRoutes = require('./routes/mcaRoutes');
-const userResponseRoutes = require('./routes/userResponseRoutes');
-const uploadRoutes = require('./routes/uploadRoutes');
-const addressRoutes = require('./routes/addressRoutes');
-const authRoutes = require('./routes/authRoutes');
-const adminConfigRoutes = require('./routes/adminConfigRoutes');
-const dealerRoutes = require('./routes/dealerRoutes');
-const pdfRoutes = require('./routes/pdfRoutes');
-const lenderEmailRoutes = require('./routes/lenderEmailRoutes');
-const { auditMiddleware } = require('./middleware/auditMiddleware');
+const connectDB = require("./config/database");
+const emailService = require("./services/emailService");
+const mcaRoutes = require("./routes/mcaRoutes");
+const userResponseRoutes = require("./routes/userResponseRoutes");
+const uploadRoutes = require("./routes/uploadRoutes");
+const addressRoutes = require("./routes/addressRoutes");
+const authRoutes = require("./routes/authRoutes");
+const adminConfigRoutes = require("./routes/adminConfigRoutes");
+const dealerRoutes = require("./routes/dealerRoutes");
+const pdfRoutes = require("./routes/pdfRoutes");
+const lenderEmailRoutes = require("./routes/lenderEmailRoutes");
+const dummyRoutes = require("./routes/dummyRoutes");
+const { auditMiddleware } = require("./middleware/auditMiddleware");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Middleware
-app.set('trust proxy', true); // Trust proxy for correct IP address (Vercel/Nginx)
+app.set("trust proxy", true); // Trust proxy for correct IP address (Vercel/Nginx)
 app.use(cors());
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 // Request logging middleware (simple)
 app.use((req, res, next) => {
@@ -43,7 +44,7 @@ if (process.env.VERCEL) {
         await connectDB();
       }
     } catch (error) {
-      console.error('Database connection error in middleware:', error.message);
+      console.error("Database connection error in middleware:", error.message);
       // Continue anyway - let individual routes handle the error
     }
     next();
@@ -56,14 +57,18 @@ if (process.env.VERCEL) {
 app.use(auditMiddleware);
 
 // Swagger API Documentation
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
-  customCss: '.swagger-ui .topbar { display: none }',
-  customSiteTitle: 'MCA Lending API Documentation'
-}));
+app.use(
+  "/api-docs",
+  swaggerUi.serve,
+  swaggerUi.setup(swaggerSpec, {
+    customCss: ".swagger-ui .topbar { display: none }",
+    customSiteTitle: "MCA Lending API Documentation",
+  })
+);
 
 // Swagger JSON endpoint
-app.get('/api-docs.json', (req, res) => {
-  res.setHeader('Content-Type', 'application/json');
+app.get("/api-docs.json", (req, res) => {
+  res.setHeader("Content-Type", "application/json");
   res.send(swaggerSpec);
 });
 
@@ -92,24 +97,27 @@ app.get('/api-docs.json', (req, res) => {
  *                   type: string
  *                   format: date-time
  */
-app.get('/health', (req, res) => {
+app.get("/health", (req, res) => {
   res.json({
     success: true,
-    message: 'Server is running',
-    timestamp: new Date().toISOString()
+    message: "Server is running",
+    timestamp: new Date().toISOString(),
   });
 });
 
+app.use("/public", express.static(path.join(__dirname, "public")));
+
 // API Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/mca', mcaRoutes);
-app.use('/api/responses', userResponseRoutes);
-app.use('/api/upload', uploadRoutes);
-app.use('/api/address', addressRoutes);
-app.use('/api/config', adminConfigRoutes);
-app.use('/api/dealer', dealerRoutes);
-app.use('/api/pdf', pdfRoutes);
-app.use('/api/lenders', lenderEmailRoutes);
+app.use("/api/auth", authRoutes);
+app.use("/api/mca", mcaRoutes);
+app.use("/api/responses", userResponseRoutes);
+app.use("/api/upload", uploadRoutes);
+app.use("/api/address", addressRoutes);
+app.use("/api/config", adminConfigRoutes);
+app.use("/api/dealer", dealerRoutes);
+app.use("/api/pdf", pdfRoutes);
+app.use("/api/lenders", lenderEmailRoutes);
+app.use("/api/dummy", dummyRoutes);
 
 /**
  * @swagger
@@ -122,18 +130,18 @@ app.use('/api/lenders', lenderEmailRoutes);
  *       200:
  *         description: API information
  */
-app.get('/', (req, res) => {
+app.get("/", (req, res) => {
   res.json({
     success: true,
-    message: 'MCA Lending API Server',
-    version: '1.0.0',
-    documentation: '/api-docs',
+    message: "MCA Lending API Server",
+    version: "1.0.0",
+    documentation: "/api-docs",
     endpoints: {
-      mca: '/api/mca',
-      responses: '/api/responses',
-      health: '/health',
-      docs: '/api-docs'
-    }
+      mca: "/api/mca",
+      responses: "/api/responses",
+      health: "/health",
+      docs: "/api-docs",
+    },
   });
 });
 
@@ -141,19 +149,19 @@ app.get('/', (req, res) => {
 app.use((req, res) => {
   res.status(404).json({
     success: false,
-    message: 'Route not found',
-    path: req.path
+    message: "Route not found",
+    path: req.path,
   });
 });
 
 // Global error handler
 app.use((err, req, res, next) => {
-  console.error('❌ Server Error:', err);
+  console.error("❌ Server Error:", err);
 
   res.status(err.status || 500).json({
     success: false,
-    message: err.message || 'Internal server error',
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+    message: err.message || "Internal server error",
+    ...(process.env.NODE_ENV === "development" && { stack: err.stack }),
   });
 });
 
@@ -161,36 +169,47 @@ app.use((err, req, res, next) => {
 const startServer = async () => {
   // Skip initialization on Vercel - serverless functions handle connections per request
   if (process.env.VERCEL) {
-    console.log('⚠️  Running on Vercel - skipping upfront initialization (will initialize on-demand)');
+    console.log(
+      "⚠️  Running on Vercel - skipping upfront initialization (will initialize on-demand)"
+    );
     return;
   }
 
   try {
     // Connect to MongoDB first
     await connectDB();
-    console.log('✅ Database connected successfully');
-    
+    console.log("✅ Database connected successfully");
+
     // Initialize email service
     try {
       await emailService.initialize();
-      console.log('✅ Email service initialized successfully');
+      console.log("✅ Email service initialized successfully");
     } catch (emailError) {
-      console.warn('⚠️  Email service initialization failed:', emailError.message);
-      console.warn('⚠️  Server will continue, but emails may not be sent. Check your email configuration.');
+      console.warn(
+        "⚠️  Email service initialization failed:",
+        emailError.message
+      );
+      console.warn(
+        "⚠️  Server will continue, but emails may not be sent. Check your email configuration."
+      );
       // Don't fail server startup if email service fails - it's not critical
     }
-    
+
     // Only start server after database connection is successful
     // For local development - only start server if not in production/Vercel environment
-    if (process.env.NODE_ENV !== 'production') {
+    if (process.env.NODE_ENV !== "production") {
       const server = app.listen(PORT, () => {
         console.log(`\n🚀 Server is running on port ${PORT}`);
-        console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
+        console.log(`📍 Environment: ${process.env.NODE_ENV || "development"}`);
         console.log(`🌐 API URL: http://localhost:${PORT}`);
         console.log(`\n📚 Documentation:`);
         console.log(`   🔷 Swagger UI:  http://localhost:${PORT}/api-docs`);
-        console.log(`   📄 JSON Spec:   http://localhost:${PORT}/api-docs.json`);
-        console.log(`   📦 Postman:     MCA_Lending_API.postman_collection.json`);
+        console.log(
+          `   📄 JSON Spec:   http://localhost:${PORT}/api-docs.json`
+        );
+        console.log(
+          `   📦 Postman:     MCA_Lending_API.postman_collection.json`
+        );
         console.log(`\n📚 Available endpoints:`);
         console.log(`   GET  /health - Health check`);
         console.log(`   GET  /api/mca - Get all MCA records`);
@@ -210,28 +229,30 @@ const startServer = async () => {
       });
 
       // Graceful shutdown for local development
-      process.on('SIGTERM', () => {
-        console.log('SIGTERM signal received: closing HTTP server');
+      process.on("SIGTERM", () => {
+        console.log("SIGTERM signal received: closing HTTP server");
         server.close(() => {
-          console.log('HTTP server closed');
+          console.log("HTTP server closed");
           // Close email service
-          emailService.close().catch(err => {
-            console.warn('Error closing email service:', err.message);
+          emailService.close().catch((err) => {
+            console.warn("Error closing email service:", err.message);
           });
           // Close MongoDB connection
           mongoose.connection.close(false, () => {
-            console.log('MongoDB connection closed');
+            console.log("MongoDB connection closed");
             process.exit(0);
           });
         });
       });
     }
   } catch (error) {
-    console.error('❌ Failed to start server:', error);
+    console.error("❌ Failed to start server:", error);
     // In production (Vercel), we still want to export the app even if DB connection fails
     // The app will handle errors per request
-    if (process.env.NODE_ENV === 'production' || process.env.VERCEL) {
-      console.log('⚠️  Continuing in production mode despite database connection failure');
+    if (process.env.NODE_ENV === "production" || process.env.VERCEL) {
+      console.log(
+        "⚠️  Continuing in production mode despite database connection failure"
+      );
     } else {
       process.exit(1);
     }
@@ -242,4 +263,3 @@ const startServer = async () => {
 startServer();
 
 module.exports = app;
-
