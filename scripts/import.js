@@ -19,8 +19,118 @@ const crypto = require('crypto');
 const MONGO_URI = process.env.MONGODB_URI//"mongodb+srv://admin:Kapil%403110.@cluster0.bmbvy.mongodb.net/efilebusiness?retryWrites=true&w=majority";
 const MONGO_DB = process.env.MONGO_DB//"efilebusiness";
 const COLLECTION_NAME = process.env.COLLECTION_NAME//"data";
-const INPUT_CSV = "files/31-dec-mca-high-revenue.csv";
+const INPUT_CSV = "files/data-14-jan.xlsx";
 console.log(MONGO_URI)
+
+// =====================================================================
+// HEADER MAPPING CONFIGURATION
+// =====================================================================
+// Add your CSV/Excel header names here and map them to MongoDB field names.
+// The keys are the CSV column headers (case-insensitive, whitespace-trimmed).
+// The values are the MongoDB document field names.
+//
+// Example: If your CSV has "Phone number" column, map it to "phoneNumber"
+// =====================================================================
+const HEADER_MAPPING = {
+    // Phone fields
+    'phone number': 'phoneNumber',
+    'phonenumber': 'phoneNumber',
+    'phone': 'phoneNumber',
+    
+    // Line type / number type
+    'line type': 'numbertype',
+    'linetype': 'numbertype',
+    'number type': 'numbertype',
+    'numbertype': 'numbertype',
+    
+    // Network type / carrier
+    'networktype': 'networktype',
+    'network type': 'networktype',
+    'carrier': 'networktype',
+    
+    // Name fields
+    'first name': 'firstName',
+    'firstname': 'firstName',
+    'fname': 'firstName',
+    'last name': 'lastName',
+    'lastname': 'lastName',
+    'lname': 'lastName',
+    
+    // Company / Business name
+    'company': 'company',
+    'name': 'company',
+    'business name': 'company',
+    'businessname': 'company',
+    
+    // Revenue
+    'revenue': 'monthlyRevenue',
+    'monthly revenue': 'monthlyRevenue',
+    'monthlyrevenue': 'monthlyRevenue',
+    'annual revenue': 'monthlyRevenue',
+    
+    // Email
+    'email': 'email',
+    'email address': 'email',
+    'emailaddress': 'email',
+    
+    // Address fields
+    'address': 'address',
+    'street': 'address',
+    'street address': 'address',
+    'city': 'city',
+    'state': 'state',
+    'zip': 'zip',
+    'zipcode': 'zip',
+    'zip code': 'zip',
+    'postal code': 'zip',
+    
+    // Other fields
+    'uniqueid': 'uniqueId',
+    'unique id': 'uniqueId',
+    'id': 'uniqueId',
+    'taxid': 'taxId',
+    'tax id': 'taxId',
+    'ein': 'taxId',
+    'birthdate': 'birthDate',
+    'birth date': 'birthDate',
+    'dob': 'birthDate',
+    'datebusinessstarted': 'dateBusinessStarted',
+    'date business started': 'dateBusinessStarted',
+    'business start date': 'dateBusinessStarted',
+    'siccode': 'sicCode',
+    'sic code': 'sicCode',
+    'sic': 'sicCode',
+    'emailstatus': 'emailStatus',
+    'email status': 'emailStatus',
+    'title': 'title',
+    'job title': 'title',
+    'status': 'status',
+    'url': 'URL',
+    'website': 'URL',
+};
+
+// MongoDB document schema - all fields that will be created
+const MONGO_SCHEMA_FIELDS = {
+    phoneNumber: "",
+    numbertype: "",
+    networktype: "",
+    firstName: "",
+    lastName: "",
+    company: "",
+    email: "",
+    phone2: "",
+    phone3: "",
+    address: "",
+    city: "",
+    state: "",
+    zip: "",
+    taxId: "",
+    birthDate: "",
+    dateBusinessStarted: "",
+    monthlyRevenue: "",
+    uniqueId: "",
+    isActive: true
+};
 
 // Tune these if needed (higher = faster until DB/network bottleneck)
 const BATCH_SIZE = 500;       // rows per bulk write (try 2000–5000)
@@ -283,6 +393,7 @@ async function run() {
     }
 
     // Mapping from CSV headers to MongoDB document keys
+    // Uses the HEADER_MAPPING configuration defined at the top of the file
     function getMongoKey(csvHeader) {
         if (!csvHeader) return null;
         
@@ -292,62 +403,21 @@ async function run() {
         // Remove any BOM or zero-width characters
         const cleaned = trimmed.replace(/^\uFEFF/, '').replace(/[\u200B-\u200D\uFEFF]/g, '');
         
-        // Direct exact matches first (case-sensitive, after cleaning)
-        const directMatches = {
-            'uniqueId': 'uniqueId',
-            'UniqueId': 'uniqueId',
-            'UNIQUEID': 'uniqueId',
-            'Name': 'company',
-            'name': 'company',
-            'NAME': 'company',
-            'company': 'company',
-            'Company': 'company',
-            'COMPANY': 'company',
-            'revenue': 'monthlyRevenue',
-            'Revenue': 'monthlyRevenue',
-            'REVENUE': 'monthlyRevenue',
-            'Phone Number': 'phoneNumber',
-        };
-        
-        if (directMatches[cleaned]) {
-            return directMatches[cleaned];
-        }
-        
-        // Normalize and check mapping (handles variations like "Name ", " name", etc.)
+        // Normalize to lowercase for lookup
         const normalized = normalizeHeader(cleaned);
-        const mapping = {
-            'phonenumber': 'phoneNumber',
-            'firstname': 'firstName',
-            'lastname': 'lastName',
-            'name': 'company',
-            'company': 'company',
-            'revenue': 'monthlyRevenue',
-            'carrier': 'networktype',
-            'linetype': 'numbertype',
-            'email': 'email',
-            'address': 'address',
-            'city': 'city',
-            'zip': 'zip',
-            'uniqueid': 'uniqueId',
-            'state': 'state',
-            'taxid': 'taxId',
-            'birthdate': 'birthDate',
-            'datebusinessstarted': 'dateBusinessStarted',
-            'siccode': 'sicCode',
-            'emailstatus': 'emailStatus',
-            'title': 'title',
-            'status': 'status',
-            'url': 'URL'
-        };
         
-        const result = mapping[normalized] || null;
-        
-        // Extra check: if normalized is "name" and we didn't get a match, return company anyway
-        if (!result && normalized === 'name') {
-            return 'company';
+        // Look up in the configurable HEADER_MAPPING
+        if (HEADER_MAPPING[normalized]) {
+            return HEADER_MAPPING[normalized];
         }
         
-        return result;
+        // Also try the cleaned version directly (for exact case matches)
+        const lowerCleaned = cleaned.toLowerCase();
+        if (HEADER_MAPPING[lowerCleaned]) {
+            return HEADER_MAPPING[lowerCleaned];
+        }
+        
+        return null;
     }
 
     // Clean and normalize values
@@ -387,28 +457,8 @@ async function run() {
 
     let firstRecordLogged = false;
     function transformRecord(record) {
-        // Initialize with all required MongoDB document fields
-        const newRecord = {
-            phoneNumber: "",
-            numbertype: "",
-            networktype: "",
-            firstName: "",
-            lastName: "",
-            company: "",
-            email: "",
-            phone2: "",
-            phone3: "",
-            address: "",
-            city: "",
-            state: "",
-            zip: "",
-            taxId: "",
-            birthDate: "",
-            dateBusinessStarted: "",
-            monthlyRevenue: "",
-            uniqueId: "",
-            isActive: true
-        };
+        // Initialize with all required MongoDB document fields from schema config
+        const newRecord = { ...MONGO_SCHEMA_FIELDS };
 
         // Log CSV keys from first record for debugging
         const isFirstRecord = !firstRecordLogged;

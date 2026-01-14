@@ -36,12 +36,12 @@ const mcaSchema = new mongoose.Schema({
 mcaSchema.index({ uniqueId: 1, isActive: 1 });
 mcaSchema.index({ createdAt: -1 });
 
-// Static method to find by MongoDB ID or uniqueId
+// Static method to find by MongoDB ID or uniqueId (case-insensitive)
 mcaSchema.statics.findByIdOrUniqueId = async function(identifier) {
   let doc;
   
-  // Try to find by uniqueId first
-  doc = await this.findOne({ uniqueId: identifier }).populate('userResponses');
+  // Try to find by uniqueId first (case-insensitive)
+  doc = await this.findOne({ uniqueId: new RegExp(`^${identifier}$`, 'i') }).populate('userResponses');
   if (doc) return doc;
   
   // If not found and identifier is a valid ObjectId, try MongoDB _id
