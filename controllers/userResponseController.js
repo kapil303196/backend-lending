@@ -27,7 +27,7 @@ exports.getAllResponses = async (req, res) => {
     }
 
     if (uniqueId) {
-      query.uniqueId = uniqueId;
+      query.uniqueId = new RegExp(`^${uniqueId}$`, 'i'); // Case-insensitive search
     }
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
@@ -168,8 +168,8 @@ exports.createResponse = async (req, res) => {
       });
     }
 
-    // Find the MCA record
-    const mca = await MCA.findOne({ uniqueId });
+    // Find the MCA record (case-insensitive uniqueId search)
+    const mca = await MCA.findOne({ uniqueId: new RegExp(`^${uniqueId}$`, 'i') });
 
     if (!mca) {
       return res.status(404).json({
