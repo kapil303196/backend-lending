@@ -19,7 +19,7 @@ const crypto = require('crypto');
 const MONGO_URI = process.env.MONGODB_URI//"mongodb+srv://admin:Kapil%403110.@cluster0.bmbvy.mongodb.net/efilebusiness?retryWrites=true&w=majority";
 const MONGO_DB = process.env.MONGO_DB//"efilebusiness";
 const COLLECTION_NAME = process.env.COLLECTION_NAME//"data";
-const INPUT_CSV = "files/data-14-jan.xlsx";
+const INPUT_CSV = "files/data-21-jan.xlsx";
 console.log(MONGO_URI)
 
 // =====================================================================
@@ -36,6 +36,8 @@ const HEADER_MAPPING = {
     'phone number': 'phoneNumber',
     'phonenumber': 'phoneNumber',
     'phone': 'phoneNumber',
+    'business phone': 'phoneNumber',
+    'businessphone': 'phoneNumber',
     
     // Line type / number type
     'line type': 'numbertype',
@@ -61,6 +63,8 @@ const HEADER_MAPPING = {
     'name': 'company',
     'business name': 'company',
     'businessname': 'company',
+    'company name': 'company',
+    'companyname': 'company',
     
     // Revenue
     'revenue': 'monthlyRevenue',
@@ -97,6 +101,8 @@ const HEADER_MAPPING = {
     'datebusinessstarted': 'dateBusinessStarted',
     'date business started': 'dateBusinessStarted',
     'business start date': 'dateBusinessStarted',
+    'time in business': 'dateBusinessStarted',
+    'timeinbusiness': 'dateBusinessStarted',
     'siccode': 'sicCode',
     'sic code': 'sicCode',
     'sic': 'sicCode',
