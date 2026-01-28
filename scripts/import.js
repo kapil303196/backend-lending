@@ -19,7 +19,7 @@ const crypto = require('crypto');
 const MONGO_URI = process.env.MONGODB_URI//"mongodb+srv://admin:Kapil%403110.@cluster0.bmbvy.mongodb.net/efilebusiness?retryWrites=true&w=majority";
 const MONGO_DB = process.env.MONGO_DB//"efilebusiness";
 const COLLECTION_NAME = process.env.COLLECTION_NAME//"data";
-const INPUT_CSV = "files/dropbox-washingtonfulltextlist-6.csv";
+const INPUT_CSV = path.resolve(__dirname, "../files/Washington local emails combine.csv");
 console.log(MONGO_URI)
 
 // =====================================================================
@@ -32,6 +32,45 @@ console.log(MONGO_URI)
 // Example: If your CSV has "Phone number" column, map it to "phoneNumber"
 // =====================================================================
 const HEADER_MAPPING = {
+    // ----------------------
+    // Washington local emails combine.csv (explicit column support)
+    // ----------------------
+    'entity id': 'entityId',
+    'entityid': 'entityId',
+    'physical address line 1': 'physicalAddressLine1',
+    'physical address line 2': 'physicalAddressLine2',
+    'physical address line 3': 'physicalAddressLine3',
+    'physical city': 'physicalCity',
+    'physical state': 'physicalState',
+    'physical country': 'physicalCountry',
+    'physical zip5': 'physicalZip5',
+    'physical zip4': 'physicalZip4',
+    'mailing address line 1': 'mailingAddressLine1',
+    'mailing address line 2': 'mailingAddressLine2',
+    'mailing address line 3': 'mailingAddressLine3',
+    // NOTE: the source file header has a double-space: "Mailing  City"
+    'mailing  city': 'mailingCity',
+    'mailing city': 'mailingCity',
+    'mailing state': 'mailingState',
+    'mailing country': 'mailingCountry',
+    'mailing zip5': 'mailingZip5',
+    // NOTE: source file typo: "Mailig Zip4"
+    'mailig zip4': 'mailingZip4',
+    'mailing zip4': 'mailingZip4',
+    'business name': 'businessName',
+    'record status': 'recordStatus',
+    'state of incorporation': 'stateOfIncorporation',
+    'date of incorporation': 'dateOfIncorporation',
+    'expiration date': 'expirationDate',
+    'dissolution date': 'dissolutionDate',
+    'type': 'type',
+    'type description': 'typeDescription',
+    'registered agent name': 'registeredAgentName',
+    'registered agent address': 'registeredAgentAddress',
+    'registered agent city': 'registeredAgentCity',
+    'registered agent state': 'registeredAgentState',
+    'registered agent zip': 'registeredAgentZip',
+
     // Phone fields
     'phone number': 'phoneNumber',
     'phonenumber': 'phoneNumber',
@@ -64,8 +103,7 @@ const HEADER_MAPPING = {
     // Company / Business name
     'company': 'company',
     'name': 'company',
-    'business name': 'company',
-    'businessname': 'company',
+    'businessname': 'businessName',
     'company name': 'company',
     'companyname': 'company',
     
@@ -84,63 +122,40 @@ const HEADER_MAPPING = {
     'address': 'address',
     'street': 'address',
     'street address': 'address',
-    'physical address line 1': 'address',
     'physicaladdressline1': 'address',
-    'mailing address line 1': 'mailingAddress',
     'mailingaddressline1': 'mailingAddress',
     'city': 'city',
-    'physical city': 'city',
     'physicalcity': 'city',
-    'mailing city': 'mailingCity',
     'mailingcity': 'mailingCity',
     'state': 'state',
-    'physical state': 'state',
     'physicalstate': 'state',
-    'mailing state': 'mailingState',
     'mailingstate': 'mailingState',
     'zip': 'zip',
     'zipcode': 'zip',
     'zip code': 'zip',
     'postal code': 'zip',
-    'physical zip5': 'zip',
     'physicalzip5': 'zip',
-    'physical zip4': 'zip4',
     'physicalzip4': 'zip4',
-    'mailing zip5': 'mailingZip',
     'mailingzip5': 'mailingZip',
-    'mailing zip4': 'mailingZip4',
     'mailingzip4': 'mailingZip4',
-    'physical country': 'country',
     'physicalcountry': 'country',
-    'mailing country': 'mailingCountry',
     'mailingcountry': 'mailingCountry',
     
     // Washington State specific fields
     'ubi': 'ubi',
-    'record status': 'status',
-    'recordstatus': 'status',
     'category': 'category',
-    'state of incorporation': 'stateOfIncorporation',
     'stateofincorporation': 'stateOfIncorporation',
-    'date of incorporation': 'dateBusinessStarted',
-    'dateofincorporation': 'dateBusinessStarted',
-    'expiration date': 'expirationDate',
+    // Keep legacy support for alternate header formatting without overriding the main mapping above.
+    'recordstatus': 'recordStatus',
+    'dateofincorporation': 'dateOfIncorporation',
     'expirationdate': 'expirationDate',
-    'dissolution date': 'dissolutionDate',
     'dissolutiondate': 'dissolutionDate',
     'duration': 'duration',
-    'type': 'businessType',
-    'type description': 'typeDescription',
     'typedescription': 'typeDescription',
-    'registered agent name': 'registeredAgentName',
     'registeredagentname': 'registeredAgentName',
-    'registered agent address': 'registeredAgentAddress',
     'registeredagentaddress': 'registeredAgentAddress',
-    'registered agent city': 'registeredAgentCity',
     'registeredagentcity': 'registeredAgentCity',
-    'registered agent state': 'registeredAgentState',
     'registeredagentstate': 'registeredAgentState',
-    'registered agent zip': 'registeredAgentZip',
     'registeredagentzip': 'registeredAgentZip',
     
     // Other fields
@@ -166,8 +181,8 @@ const HEADER_MAPPING = {
     'title': 'title',
     'job title': 'title',
     'status': 'status',
-    'url': 'URL',
-    'website': 'URL',
+    'url': 'url',
+    'website': 'url',
 };
 
 // MongoDB document schema - all fields that will be created
@@ -188,15 +203,34 @@ const MONGO_SCHEMA_FIELDS = {
     zip: "",
     zip4: "",
     country: "",
+    // General mailing fields (legacy)
     mailingAddress: "",
     mailingCity: "",
     mailingState: "",
     mailingZip: "",
     mailingZip4: "",
     mailingCountry: "",
+    // Explicit WA columns
+    url: "",
+    entityId: "",
+    physicalAddressLine1: "",
+    physicalAddressLine2: "",
+    physicalAddressLine3: "",
+    physicalCity: "",
+    physicalState: "",
+    physicalCountry: "",
+    physicalZip5: "",
+    physicalZip4: "",
+    mailingAddressLine1: "",
+    mailingAddressLine2: "",
+    mailingAddressLine3: "",
+    mailingZip5: "",
+    businessName: "",
+    recordStatus: "",
     taxId: "",
     birthDate: "",
     dateBusinessStarted: "",
+    dateOfIncorporation: "",
     monthlyRevenue: "",
     uniqueId: "",
     title: "",
@@ -208,7 +242,6 @@ const MONGO_SCHEMA_FIELDS = {
     expirationDate: "",
     dissolutionDate: "",
     duration: "",
-    businessType: "",
     typeDescription: "",
     registeredAgentName: "",
     registeredAgentAddress: "",
@@ -270,6 +303,13 @@ async function withRetry(fn, label) {
         try {
             return await fn();
         } catch (err) {
+            // Do NOT retry duplicate key errors; we handle duplicates via update/upsert.
+            const code = err?.code ?? err?.errorResponse?.code;
+            if (code === 11000) throw err;
+            // BulkWrite can contain duplicate key writeErrors
+            const writeErrors = err?.writeErrors || err?.result?.writeErrors;
+            if (Array.isArray(writeErrors) && writeErrors.some(e => e?.code === 11000)) throw err;
+
             if (attempt > MAX_RETRIES) {
                 console.error(`❌ ${label} failed after ${MAX_RETRIES} retries:`, err?.message || err);
                 throw err;
@@ -527,7 +567,8 @@ async function run() {
 
     let currentIndex = 0;   // absolute row index
     let processed = 0;      // rows processed since resume
-    let inserted = 0;       // rows inserted
+    let upserted = 0;       // new docs created
+    let modified = 0;       // existing docs updated
     let skipped = 0;        // rows skipped (empty)
     let inFlight = 0;       // running batch jobs
     let ended = false;
@@ -553,7 +594,7 @@ async function run() {
         const etaSec = fileSize && rps > 0 ? Math.max(0, ((fileSize - bytesRead) / (bytesRead / Math.max(1, processed))) / rps) : 0;
 
         process.stdout.write(
-            `\r⏱️ ${rps.toFixed(0)} rows/s | 📦 in-flight ${inFlight}/${CONCURRENCY} | ✅ inserted ${inserted} | 🧮 processed ${processed} | ⏭️  skipped ${skipped} | 📊 ${pct}% | ⏳ ETA ~${Math.round(etaSec)}s   `
+            `\r⏱️ ${rps.toFixed(0)} rows/s | 📦 in-flight ${inFlight}/${CONCURRENCY} | 🆕 upserted ${upserted} | 🔁 updated ${modified} | 🧮 processed ${processed} | ⏭️  skipped ${skipped} | 📊 ${pct}% | ⏳ ETA ~${Math.round(etaSec)}s   `
         );
 
         lastTick = now;
@@ -694,32 +735,61 @@ async function run() {
             // Use UBI as uniqueId if available (Washington State businesses)
             if (newRecord.ubi && newRecord.ubi !== "") {
                 newRecord.uniqueId = newRecord.ubi;
+            } else if (newRecord.entityId && newRecord.entityId !== "") {
+                newRecord.uniqueId = String(newRecord.entityId).trim();
             } else {
                 newRecord.uniqueId = crypto.randomBytes(4).toString('hex').toUpperCase(); // 8 chars hex
             }
+        }
+
+        // If UBI missing but Entity ID present (your WA file uses "Entity ID"), keep both aligned
+        if ((!newRecord.ubi || newRecord.ubi === "") && newRecord.entityId && newRecord.entityId !== "") {
+            newRecord.ubi = String(newRecord.entityId).trim();
+        }
+
+        // Derive isActive from Record Status when present
+        if (newRecord.recordStatus && typeof newRecord.recordStatus === 'string') {
+            newRecord.isActive = newRecord.recordStatus.trim().toLowerCase() === 'active';
+        } else if (newRecord.status && typeof newRecord.status === 'string') {
+            // fallback to legacy "status" field
+            newRecord.isActive = newRecord.status.trim().toLowerCase() === 'active';
         }
 
         return newRecord;
     }
 
     async function scheduleBatchInsert(rows, endIndexExclusive, collection) {
-        const docs = rows.map(r => ({ ...transformRecord(r), createdAt: new Date(), updatedAt: new Date() }));
+        // NOTE: We update existing docs by uniqueId (no new doc for duplicates).
+        // Upsert=true keeps the import idempotent (creates doc if not present).
+        const now = new Date();
+        const docs = rows.map(r => ({ ...transformRecord(r), updatedAt: now }));
 
         const job = limit(async () => {
             inFlight++;
             try {
                 const res = await withRetry(
                     () => collection.bulkWrite(
-                        docs.map(d => ({ insertOne: { document: d } })),
+                        docs.map(d => ({
+                            updateOne: {
+                                filter: { uniqueId: d.uniqueId },
+                                update: {
+                                    $set: d,
+                                    $setOnInsert: { createdAt: now }
+                                },
+                                upsert: true
+                            }
+                        })),
                         { ordered: false, bypassDocumentValidation: true /* fastest inserts */ }
                     ),
                     `bulkWrite(${docs.length})`
                 );
-                inserted += res.insertedCount || docs.length; // fallback to docs.length for older drivers
+                upserted += res.upsertedCount || 0;
+                // modifiedCount doesn't include upserts; it's only existing docs changed
+                modified += res.modifiedCount || 0;
                 saveCheckpointThrottled(endIndexExclusive);
 
                 // Old-style progress line (like your previous logs)
-                console.log(`\n🚚 Inserted ${docs.length} records. Total processed: ${processed} (Current index: ${endIndexExclusive})`);
+                console.log(`\n🚚 Upserted ${res.upsertedCount || 0} | Updated ${res.modifiedCount || 0} records. Total processed: ${processed} (Current index: ${endIndexExclusive})`);
             } finally {
                 inFlight--;
                 maybeResume();
@@ -818,7 +888,8 @@ async function run() {
   DB:   ${MONGO_DB}.${COLLECTION_NAME}
   BATCH_SIZE: ${BATCH_SIZE}, CONCURRENCY: ${CONCURRENCY}, MAX_INFLIGHT: ${MAX_INFLIGHT}
   Total processed: ${processed}
-  Total inserted:  ${inserted}
+  Total upserted:  ${upserted}
+  Total updated:   ${modified}
   Total skipped:   ${skipped}
   Final index:     ${currentIndex}
   Completed OK:    ${!hadError && ended}
