@@ -2,23 +2,102 @@ const twilio = require("twilio");
 const AdminConfig = require("../models/AdminConfig");
 const Call = require("../models/Call");
 const UserResponse = require("../models/UserResponse");
+const TwilioAccount = require("../models/TwilioAccount");
 const { normalizePhoneNumber } = require("../middleware/twilioValidation");
 
 /**
- * Get Twilio configuration from AdminConfig
+ * Resolve a Twilio account configuration.
+ *
+ * Priority order:
+ * 1. Specific TwilioAccount by ID (if accountId provided)
+ * 2. TwilioAccount marked as isDefault === true
+ * 3. Legacy single-account configuration stored on AdminConfig.twilio
+ *
+ * The returned object normalizes the shape so existing callers expecting
+ * AdminConfig.twilio continue to work.
+ *
+ * @param {Object} [options]
+ * @param {string} [options.accountId] - Optional TwilioAccount _id to use
  * @returns {Promise<Object>} Twilio configuration object
- * @throws {Error} If Twilio is not configured
+ * @throws {Error} If no Twilio configuration is available
  */
-async function getTwilioConfig() {
-  const config = await AdminConfig.findOne({ configId: "default" });
-  if (!config?.twilio?.accountSid || !config?.twilio?.authToken) {
-    throw new Error("Twilio is not configured. Please configure Twilio in the admin panel.");
+async function getTwilioConfig(options = {}) {
+  const { accountId } = options || {};
+
+  // 1. Explicit TwilioAccount by ID
+  if (accountId) {
+    const account = await TwilioAccount.findById(accountId).lean();
+    if (account) {
+      return mapTwilioAccountToConfig(account);
+    }
   }
-  return config.twilio;
+
+  // 2. Default TwilioAccount (if any)
+  const defaultAccount = await TwilioAccount.findOne({ isDefault: true }).lean();
+  if (defaultAccount) {
+    return mapTwilioAccountToConfig(defaultAccount);
+  }
+
+  // 3. Legacy AdminConfig.twilio (single-account mode)
+  const adminConfig = await AdminConfig.findOne({ configId: "default" }).lean();
+  if (adminConfig?.twilio?.accountSid && adminConfig?.twilio?.authToken) {
+    return adminConfig.twilio;
+  }
+
+  throw new Error(
+    "Twilio is not configured. Please configure at least one Twilio account in the admin panel."
+  );
+}
+
+/**
+ * Map a TwilioAccount document to the legacy AdminConfig.twilio shape
+ * so existing controller logic can keep using twilioConfig.* safely.
+ *
+ * @param {Object} account - TwilioAccount (lean object)
+ * @returns {Object}
+ */
+function mapTwilioAccountToConfig(account) {
+  const primaryNumberDoc =
+    account.phoneNumbers?.find((n) => n.isPrimary && n.isActive) ||
+    account.phoneNumbers?.find((n) => n.isOutboundCallerId && n.isActive) ||
+    account.phoneNumbers?.find((n) => n.isActive) ||
+    null;
+
+  const primaryNumber = primaryNumberDoc?.phoneNumber || "";
+
+  return {
+    // Core credentials
+    accountSid: account.accountSid,
+    authToken: account.authToken,
+    apiKey: account.apiKey || "",
+    apiSecret: account.apiSecret || "",
+
+    // Numbers / callerId
+    primaryNumber,
+    outboundCallerId: primaryNumber,
+
+    // Recording preferences
+    recordings: {
+      enabled: account.recordings?.enabled ?? true,
+      recordInbound: account.recordings?.recordInbound ?? true,
+      recordOutbound: account.recordings?.recordOutbound ?? true,
+    },
+
+    // Webhook secret
+    webhookSecret: account.webhookSecret || "",
+
+    // Extra metadata for new multi-account aware callers
+    _accountId: account._id?.toString?.() || null,
+    _phoneNumbers: account.phoneNumbers || [],
+    _name: account.name,
+    _isDefault: account.isDefault,
+  };
 }
 
 /**
  * Create Twilio client instance
+ * @param {Object} [options]
+ * @param {string} [options.accountId] - Optional TwilioAccount _id to bind client to
  * @returns {twilio.Twilio} Twilio client
  * @throws {Error} If Twilio is not configured
  */

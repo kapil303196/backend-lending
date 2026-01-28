@@ -13,6 +13,7 @@ const {
   upsertCallRecord,
   buildTwiMLUrl,
 } = require("../utils/twilioHelpers");
+const TwilioAccount = require("../models/TwilioAccount");
 const {
   normalizePhoneNumber,
   isValidPhoneNumber,
@@ -525,12 +526,30 @@ exports.handleRecordingStatus = async (req, res) => {
  */
 exports.outboundBridge = async (req, res) => {
   try {
-    const twilioConfig = await getTwilioConfig();
+    // Optional multi-account support via twilioAccountId param
+    const twilioAccountId =
+      req.query?.twilioAccountId ||
+      req.query?.accountId ||
+      req.body?.twilioAccountId ||
+      req.body?.accountId;
+
+    const twilioConfig = await getTwilioConfig(
+      twilioAccountId ? { accountId: twilioAccountId } : undefined
+    );
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const twiml = new VoiceResponse();
 
     // Handle both query params (from direct calls) and body params (from Client SDK)
-    const toNumber = req.query?.to || req.query?.To || req.body?.to || req.body?.To;
+    const toNumber =
+      req.query?.to || req.query?.To || req.body?.to || req.body?.To;
+
+    // Optional explicit callerId / fromNumber override
+    const explicitCallerId =
+      req.query?.fromNumber ||
+      req.query?.FromNumber ||
+      req.body?.fromNumber ||
+      req.body?.FromNumber ||
+      null;
 
     if (!toNumber) {
       console.error("Outbound bridge missing destination number");
@@ -562,7 +581,11 @@ exports.outboundBridge = async (req, res) => {
     const statusCallbackUrl = buildTwiMLUrl(baseUrl, "/call-status");
 
     const dial = twiml.dial({
-      callerId: twilioConfig.outboundCallerId || twilioConfig.primaryNumber || undefined,
+      callerId:
+        explicitCallerId ||
+        twilioConfig.outboundCallerId ||
+        twilioConfig.primaryNumber ||
+        undefined,
       timeout: 30,
       record: shouldRecord ? "record-from-answer-dual" : "do-not-record",
       recordingStatusCallback: shouldRecord ? recordingCallbackUrl : undefined,
@@ -1159,7 +1182,11 @@ exports.searchCompanies = async (req, res) => {
  */
 exports.generateDialerToken = async (req, res) => {
   try {
-    const twilioConfig = await getTwilioConfig();
+    // Optional ability to target a specific Twilio account for the dialer
+    const { twilioAccountId, accountId } = req.query;
+    const twilioConfig = await getTwilioConfig(
+      twilioAccountId || accountId ? { accountId: twilioAccountId || accountId } : undefined
+    );
 
     // Check if API Key/Secret are configured (required for Client SDK)
     if (!twilioConfig.apiKey || !twilioConfig.apiSecret) {
@@ -1211,6 +1238,10 @@ exports.generateDialerToken = async (req, res) => {
         primaryNumber: twilioConfig.primaryNumber,
         outboundCallerId: twilioConfig.outboundCallerId || twilioConfig.primaryNumber,
         voiceUrl: voiceUrl, // For reference
+        // Multi-account aware clients can use this metadata
+        twilioAccountId: twilioConfig._accountId || null,
+        phoneNumbers: twilioConfig._phoneNumbers || [],
+        accountName: twilioConfig._name || null,
       },
     });
   } catch (error) {
@@ -1230,11 +1261,15 @@ exports.generateDialerToken = async (req, res) => {
  */
 exports.createOutboundCall = async (req, res) => {
   try {
-    const twilioConfig = await getTwilioConfig();
+    // Optional multi-account support
+    const { twilioAccountId, accountId } = req.body || {};
+    const twilioConfig = await getTwilioConfig(
+      twilioAccountId || accountId ? { accountId: twilioAccountId || accountId } : undefined
+    );
     const dialerConfig = await getDialerConfig();
     const client = await createTwilioClient();
 
-    const { toNumber, agentExtension, dialMethod } = req.body;
+    const { toNumber, agentExtension, dialMethod, fromNumber } = req.body;
     const method = dialMethod || dialerConfig.defaultMethod || "direct";
 
     // Validate required fields
@@ -1255,9 +1290,9 @@ exports.createOutboundCall = async (req, res) => {
     }
 
     // Get from number
-    const fromNumber =
-      twilioConfig.outboundCallerId || twilioConfig.primaryNumber;
-    if (!fromNumber) {
+    const fromNumberRaw =
+      fromNumber || twilioConfig.outboundCallerId || twilioConfig.primaryNumber;
+    if (!fromNumberRaw) {
       return res.status(400).json({
         success: false,
         message:
@@ -1265,7 +1300,7 @@ exports.createOutboundCall = async (req, res) => {
       });
     }
 
-    const normalizedFrom = normalizePhoneNumber(fromNumber);
+    const normalizedFrom = normalizePhoneNumber(fromNumberRaw);
     if (!normalizedFrom || !isValidPhoneNumber(normalizedFrom)) {
       return res.status(500).json({
         success: false,
@@ -1747,6 +1782,185 @@ exports.getCallStats = async (req, res) => {
       success: false,
       message: "Error fetching call statistics",
       error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
+
+/**
+ * ============================================================================
+ * TWILIO ACCOUNT MANAGEMENT (GLOBAL, MULTI-ACCOUNT SUPPORT)
+ * ============================================================================
+ */
+
+/**
+ * List all Twilio accounts
+ * GET /api/twilio/accounts
+ */
+exports.listTwilioAccounts = async (req, res) => {
+  try {
+    const accounts = await TwilioAccount.find().sort({ createdAt: -1 }).lean();
+
+    res.json({
+      success: true,
+      data: accounts,
+    });
+  } catch (error) {
+    console.error("List Twilio accounts error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching Twilio accounts",
+      error:
+        process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
+
+/**
+ * Create or update a Twilio account
+ * POST /api/twilio/accounts (create)
+ * PUT /api/twilio/accounts/:id (update)
+ */
+exports.createOrUpdateTwilioAccount = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const payload = req.body || {};
+
+    if (!payload.name || !payload.accountSid || !payload.authToken) {
+      return res.status(400).json({
+        success: false,
+        message: "name, accountSid and authToken are required",
+      });
+    }
+
+    // Normalize phoneNumbers array
+    if (Array.isArray(payload.phoneNumbers)) {
+      payload.phoneNumbers = payload.phoneNumbers
+        .filter((n) => n && n.phoneNumber)
+        .map((n) => ({
+          phoneNumber: n.phoneNumber,
+          label: n.label || "",
+          isPrimary: !!n.isPrimary,
+          isOutboundCallerId: n.isOutboundCallerId !== false,
+          isActive: n.isActive !== false,
+        }));
+    }
+
+    let account;
+    if (id) {
+      // Update existing
+      account = await TwilioAccount.findByIdAndUpdate(id, payload, {
+        new: true,
+        runValidators: true,
+      }).lean();
+
+      if (!account) {
+        return res.status(404).json({
+          success: false,
+          message: "Twilio account not found",
+        });
+      }
+    } else {
+      // Create new
+      account = await TwilioAccount.create(payload);
+    }
+
+    res.json({
+      success: true,
+      message: id
+        ? "Twilio account updated successfully"
+        : "Twilio account created successfully",
+      data: account,
+    });
+  } catch (error) {
+    console.error("Create/update Twilio account error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error saving Twilio account",
+      error:
+        process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
+
+/**
+ * Delete a Twilio account
+ * DELETE /api/twilio/accounts/:id
+ */
+exports.deleteTwilioAccount = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "Account id is required",
+      });
+    }
+
+    const deleted = await TwilioAccount.findByIdAndDelete(id);
+    if (!deleted) {
+      return res.status(404).json({
+        success: false,
+        message: "Twilio account not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Twilio account deleted successfully",
+    });
+  } catch (error) {
+    console.error("Delete Twilio account error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error deleting Twilio account",
+      error:
+        process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
+
+/**
+ * Lightweight endpoint for dialer to get active caller IDs
+ * GET /api/twilio/accounts/caller-ids
+ */
+exports.listTwilioCallerIds = async (req, res) => {
+  try {
+    const accounts = await TwilioAccount.find({
+      "phoneNumbers.isActive": true,
+      "phoneNumbers.isOutboundCallerId": true,
+    })
+      .select("name isDefault phoneNumbers")
+      .lean();
+
+    const items = [];
+
+    for (const acc of accounts) {
+      for (const n of acc.phoneNumbers || []) {
+        if (!n.isActive || n.isOutboundCallerId === false) continue;
+
+        items.push({
+          accountId: acc._id.toString(),
+          accountName: acc.name,
+          isDefaultAccount: !!acc.isDefault,
+          phoneNumber: n.phoneNumber,
+          label: n.label || "",
+          isPrimary: !!n.isPrimary,
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      data: items,
+    });
+  } catch (error) {
+    console.error("List Twilio caller IDs error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching Twilio caller IDs",
+      error:
+        process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
 };

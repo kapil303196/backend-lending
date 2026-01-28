@@ -17,6 +17,10 @@ const {
   exportCallsToCSV,
   handleVoicemail,
   voicemailGreeting,
+  listTwilioAccounts,
+  createOrUpdateTwilioAccount,
+  deleteTwilioAccount,
+  listTwilioCallerIds,
 } = require("../controllers/twilioController");
 const { authenticate, requireAdmin } = require("../middleware/auth");
 const { validateTwilioSignature } = require("../middleware/twilioValidation");
@@ -112,5 +116,17 @@ router.delete("/extensions/:id", authenticate, requireAdmin, deleteExtension);
 router.get("/dialer/search", authenticate, requireAdmin, searchCompanies);
 router.get("/dialer/token", authenticate, requireAdmin, generateDialerToken);
 router.post("/dialer/outbound", authenticate, requireAdmin, createOutboundCall);
+
+// Twilio account management (global, multi-account)
+router.get("/accounts", authenticate, requireAdmin, listTwilioAccounts);
+router.post("/accounts", authenticate, requireAdmin, createOrUpdateTwilioAccount);
+router.put("/accounts/:id", authenticate, requireAdmin, createOrUpdateTwilioAccount);
+router.delete("/accounts/:id", authenticate, requireAdmin, deleteTwilioAccount);
+router.get(
+  "/accounts/caller-ids",
+  authenticate,
+  requireAdmin,
+  listTwilioCallerIds
+);
 
 module.exports = router;
