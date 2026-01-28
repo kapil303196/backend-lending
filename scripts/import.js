@@ -19,7 +19,7 @@ const crypto = require('crypto');
 const MONGO_URI = process.env.MONGODB_URI//"mongodb+srv://admin:Kapil%403110.@cluster0.bmbvy.mongodb.net/efilebusiness?retryWrites=true&w=majority";
 const MONGO_DB = process.env.MONGO_DB//"efilebusiness";
 const COLLECTION_NAME = process.env.COLLECTION_NAME//"data";
-const INPUT_CSV = "files/data-21-jan.xlsx";
+const INPUT_CSV = "files/dropbox-washingtonfulltextlist-6.csv";
 console.log(MONGO_URI)
 
 // =====================================================================
@@ -57,6 +57,9 @@ const HEADER_MAPPING = {
     'last name': 'lastName',
     'lastname': 'lastName',
     'lname': 'lastName',
+    'middle name': 'middleName',
+    'middlename': 'middleName',
+    'mname': 'middleName',
     
     // Company / Business name
     'company': 'company',
@@ -81,12 +84,64 @@ const HEADER_MAPPING = {
     'address': 'address',
     'street': 'address',
     'street address': 'address',
+    'physical address line 1': 'address',
+    'physicaladdressline1': 'address',
+    'mailing address line 1': 'mailingAddress',
+    'mailingaddressline1': 'mailingAddress',
     'city': 'city',
+    'physical city': 'city',
+    'physicalcity': 'city',
+    'mailing city': 'mailingCity',
+    'mailingcity': 'mailingCity',
     'state': 'state',
+    'physical state': 'state',
+    'physicalstate': 'state',
+    'mailing state': 'mailingState',
+    'mailingstate': 'mailingState',
     'zip': 'zip',
     'zipcode': 'zip',
     'zip code': 'zip',
     'postal code': 'zip',
+    'physical zip5': 'zip',
+    'physicalzip5': 'zip',
+    'physical zip4': 'zip4',
+    'physicalzip4': 'zip4',
+    'mailing zip5': 'mailingZip',
+    'mailingzip5': 'mailingZip',
+    'mailing zip4': 'mailingZip4',
+    'mailingzip4': 'mailingZip4',
+    'physical country': 'country',
+    'physicalcountry': 'country',
+    'mailing country': 'mailingCountry',
+    'mailingcountry': 'mailingCountry',
+    
+    // Washington State specific fields
+    'ubi': 'ubi',
+    'record status': 'status',
+    'recordstatus': 'status',
+    'category': 'category',
+    'state of incorporation': 'stateOfIncorporation',
+    'stateofincorporation': 'stateOfIncorporation',
+    'date of incorporation': 'dateBusinessStarted',
+    'dateofincorporation': 'dateBusinessStarted',
+    'expiration date': 'expirationDate',
+    'expirationdate': 'expirationDate',
+    'dissolution date': 'dissolutionDate',
+    'dissolutiondate': 'dissolutionDate',
+    'duration': 'duration',
+    'type': 'businessType',
+    'type description': 'typeDescription',
+    'typedescription': 'typeDescription',
+    'registered agent name': 'registeredAgentName',
+    'registeredagentname': 'registeredAgentName',
+    'registered agent address': 'registeredAgentAddress',
+    'registeredagentaddress': 'registeredAgentAddress',
+    'registered agent city': 'registeredAgentCity',
+    'registeredagentcity': 'registeredAgentCity',
+    'registered agent state': 'registeredAgentState',
+    'registeredagentstate': 'registeredAgentState',
+    'registered agent zip': 'registeredAgentZip',
+    'registeredagentzip': 'registeredAgentZip',
     
     // Other fields
     'uniqueid': 'uniqueId',
@@ -121,6 +176,7 @@ const MONGO_SCHEMA_FIELDS = {
     numbertype: "",
     networktype: "",
     firstName: "",
+    middleName: "",
     lastName: "",
     company: "",
     email: "",
@@ -130,11 +186,35 @@ const MONGO_SCHEMA_FIELDS = {
     city: "",
     state: "",
     zip: "",
+    zip4: "",
+    country: "",
+    mailingAddress: "",
+    mailingCity: "",
+    mailingState: "",
+    mailingZip: "",
+    mailingZip4: "",
+    mailingCountry: "",
     taxId: "",
     birthDate: "",
     dateBusinessStarted: "",
     monthlyRevenue: "",
     uniqueId: "",
+    title: "",
+    status: "",
+    // Washington State specific fields
+    ubi: "",
+    category: "",
+    stateOfIncorporation: "",
+    expirationDate: "",
+    dissolutionDate: "",
+    duration: "",
+    businessType: "",
+    typeDescription: "",
+    registeredAgentName: "",
+    registeredAgentAddress: "",
+    registeredAgentCity: "",
+    registeredAgentState: "",
+    registeredAgentZip: "",
     isActive: true
 };
 
@@ -216,38 +296,155 @@ async function run() {
 
     if (filePath.endsWith('.xlsx')) {
         console.log('📖 Detected .xlsx file, using SheetJS...');
-        const workbook = XLSX.readFile(filePath);
+        console.log('📏 File size: ' + (fs.statSync(filePath).size / (1024 * 1024)).toFixed(2) + ' MB');
+        console.log('⚠️  Large file detected, using optimized read options...');
+        
+        // For very large files, read as buffer first for better memory handling
+        console.log('📖 Reading file buffer...');
+        const fileBuffer = fs.readFileSync(filePath);
+        console.log('📖 Parsing workbook from buffer...');
+        
+        // For large files, use minimal options and read only what we need
+        const workbook = XLSX.read(fileBuffer, { 
+            type: 'buffer',
+            cellStyles: false,
+            cellHTML: false,
+            cellFormula: false,
+            cellNF: false,
+            cellDates: true,
+            sheetStubs: false,
+            bookDeps: false,
+            bookFiles: false,
+            bookProps: false,
+            bookVBA: false,
+            dense: false,
+            WTF: false
+        });
+        
+        // Check if workbook has sheets
+        if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+            throw new Error('Excel file has no sheets');
+        }
+        
+        console.log('📋 Available sheets:', workbook.SheetNames);
+        console.log('📦 Sheets object exists:', !!workbook.Sheets);
+        console.log('📦 Sheets object keys:', Object.keys(workbook.Sheets || {}));
+        
         const sheetName = workbook.SheetNames[0];
-        // Use sheet_to_json with defval: "" to ensure empty cells are empty strings, but we still need to normalize keys
-        const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: "" });
-
-        // Helper to check if a row is empty (all values are empty/whitespace)
-        function isRowEmpty(row) {
-            if (!row || typeof row !== 'object' || Object.keys(row).length === 0) return true;
-            const values = Object.values(row);
-            return values.every(val => {
-                if (val === null || val === undefined) return true;
-                if (typeof val === 'string' && val.trim() === '') return true;
-                return false;
-            });
+        console.log(`📄 Attempting to read sheet: "${sheetName}"`);
+        
+        // Try to access the sheet
+        let sheet = workbook.Sheets[sheetName];
+        
+        // If sheet doesn't exist, try iterating over all available keys
+        if (!sheet) {
+            console.log('⚠️  Direct access failed, trying alternative access methods...');
+            
+            // Try case-insensitive lookup
+            const sheetsObj = workbook.Sheets || {};
+            const availableKeys = Object.keys(sheetsObj);
+            console.log('Available sheet keys:', availableKeys);
+            
+            for (const key of availableKeys) {
+                if (key.toLowerCase() === sheetName.toLowerCase()) {
+                    sheet = sheetsObj[key];
+                    console.log(`✅ Found sheet with key: "${key}"`);
+                    break;
+                }
+            }
         }
-
-        // Filter out completely empty rows
-        parser = rawData.filter(row => !isRowEmpty(row));
-
-        // Collect all unique keys from the first row (assuming header row is complete) or scan all
-        // For safety, let's scan the first 100 rows or just use the first row if we trust it.
-        // Better: get headers from the sheet directly
-        const sheet = workbook.Sheets[sheetName];
-        const range = XLSX.utils.decode_range(sheet['!ref']);
-        const headers = [];
-        for (let C = range.s.c; C <= range.e.c; ++C) {
-            const cell = sheet[XLSX.utils.encode_cell({ r: range.s.r, c: C })];
-            if (cell && cell.v) headers.push(cell.v);
+        
+        if (!sheet) {
+            console.error('❌ Sheet not found after all attempts.');
+            console.error('❌ SheetNames:', workbook.SheetNames);
+            console.error('❌ Available Sheets keys:', Object.keys(workbook.Sheets || {}));
+            
+            // Try to re-read the file with different options (no optimizations)
+            console.log('🔄 Attempting to re-read file with default options...');
+            const wb2 = XLSX.read(fileBuffer, { type: 'buffer' });
+            console.log('📋 Re-read SheetNames:', wb2.SheetNames);
+            console.log('📦 Re-read Sheets keys:', Object.keys(wb2.Sheets || {}));
+            
+            // If the re-read worked, use that workbook instead
+            if (wb2.Sheets && Object.keys(wb2.Sheets).length > 0) {
+                console.log('✅ Re-read successful, using this workbook');
+                const retrySheet = wb2.Sheets[sheetName] || wb2.Sheets[Object.keys(wb2.Sheets)[0]];
+                if (retrySheet) {
+                    console.log('✅ Sheet loaded on retry');
+                    // Convert and continue
+                    const rawData = XLSX.utils.sheet_to_json(retrySheet, { defval: "", raw: false });
+                    
+                    function isRowEmpty(row) {
+                        if (!row || typeof row !== 'object' || Object.keys(row).length === 0) return true;
+                        const values = Object.values(row);
+                        return values.every(val => {
+                            if (val === null || val === undefined) return true;
+                            if (typeof val === 'string' && val.trim() === '') return true;
+                            return false;
+                        });
+                    }
+                    
+                    parser = rawData.filter(row => !isRowEmpty(row));
+                    
+                    const range = XLSX.utils.decode_range(retrySheet['!ref']);
+                    const headers = [];
+                    for (let C = range.s.c; C <= range.e.c; ++C) {
+                        const cell = retrySheet[XLSX.utils.encode_cell({ r: range.s.r, c: C })];
+                        if (cell && cell.v) headers.push(cell.v);
+                    }
+                    allHeaders = headers;
+                    
+                    console.log(`✅ Loaded ${parser.length} rows from Excel (retry)`);
+                    console.log('📊 Sample headers:', allHeaders.slice(0, 5));
+                    // Skip the error throw and continue
+                    sheet = retrySheet;
+                }
+            }
+            
+            // Only throw if retry also failed
+            if (!sheet) {
+                throw new Error(`Sheet "${sheetName}" not found in workbook`);
+            }
         }
-        allHeaders = headers;
+        
+        // Check if sheet has data
+        if (!sheet['!ref']) {
+            throw new Error(`Sheet "${sheetName}" appears to be empty (no cell range)`);
+        }
+        
+        // Only process if not already processed by retry
+        if (!parser || parser.length === 0) {
+            console.log('✅ Sheet loaded successfully, converting to JSON...');
+            // Use sheet_to_json with defval: "" to ensure empty cells are empty strings, but we still need to normalize keys
+            const rawData = XLSX.utils.sheet_to_json(sheet, { defval: "", raw: false });
 
-        console.log(`📊 Found ${parser.length} records in Excel file (filtered from ${rawData.length}).`);
+            // Helper to check if a row is empty (all values are empty/whitespace)
+            function isRowEmpty(row) {
+                if (!row || typeof row !== 'object' || Object.keys(row).length === 0) return true;
+                const values = Object.values(row);
+                return values.every(val => {
+                    if (val === null || val === undefined) return true;
+                    if (typeof val === 'string' && val.trim() === '') return true;
+                    return false;
+                });
+            }
+
+            // Filter out completely empty rows
+            parser = rawData.filter(row => !isRowEmpty(row));
+
+            // Collect all unique keys from the first row (assuming header row is complete) or scan all
+            // For safety, let's scan the first 100 rows or just use the first row if we trust it.
+            // Better: get headers from the sheet directly
+            const range = XLSX.utils.decode_range(sheet['!ref']);
+            const headers = [];
+            for (let C = range.s.c; C <= range.e.c; ++C) {
+                const cell = sheet[XLSX.utils.encode_cell({ r: range.s.r, c: C })];
+                if (cell && cell.v) headers.push(cell.v);
+            }
+            allHeaders = headers;
+
+            console.log(`📊 Found ${parser.length} records in Excel file (filtered from ${rawData.length}).`);
+        }
         console.log(`🔑 Detected ${allHeaders.length} columns.`);
     } else {
         console.log('📖 Detected CSV file, extracting headers...');
@@ -494,7 +691,12 @@ async function run() {
 
         // Generate uniqueId if missing
         if (!newRecord.uniqueId || newRecord.uniqueId === "") {
-            newRecord.uniqueId = crypto.randomBytes(4).toString('hex').toUpperCase(); // 8 chars hex
+            // Use UBI as uniqueId if available (Washington State businesses)
+            if (newRecord.ubi && newRecord.ubi !== "") {
+                newRecord.uniqueId = newRecord.ubi;
+            } else {
+                newRecord.uniqueId = crypto.randomBytes(4).toString('hex').toUpperCase(); // 8 chars hex
+            }
         }
 
         return newRecord;
