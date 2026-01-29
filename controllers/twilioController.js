@@ -3338,3 +3338,744 @@ exports.removeCallTag = async (req, res) => {
     });
   }
 };
+
+/**
+ * Get advanced analytics dashboard data with AI insights
+ * GET /api/twilio/analytics/dashboard
+ */
+exports.getAnalyticsDashboard = async (req, res) => {
+  try {
+    const { fromDate, toDate, period = "30d" } = req.query;
+
+    // Build date filter
+    let startDate, endDate;
+    if (fromDate && toDate) {
+      startDate = new Date(fromDate);
+      endDate = new Date(toDate);
+      endDate.setHours(23, 59, 59, 999);
+    } else {
+      // Default periods
+      endDate = new Date();
+      startDate = new Date();
+      switch (period) {
+        case "7d":
+          startDate.setDate(startDate.getDate() - 7);
+          break;
+        case "30d":
+          startDate.setDate(startDate.getDate() - 30);
+          break;
+        case "90d":
+          startDate.setDate(startDate.getDate() - 90);
+          break;
+        default:
+          startDate.setDate(startDate.getDate() - 30);
+      }
+    }
+
+    const dateFilter = { createdAt: { $gte: startDate, $lte: endDate } };
+
+    // Calculate previous period for comparison
+    const periodDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
+    const prevStartDate = new Date(startDate);
+    prevStartDate.setDate(prevStartDate.getDate() - periodDays);
+    const prevEndDate = new Date(startDate);
+    prevEndDate.setMilliseconds(-1);
+    const prevDateFilter = { createdAt: { $gte: prevStartDate, $lte: prevEndDate } };
+
+    // Run all aggregations in parallel
+    const [
+      currentStats,
+      prevStats,
+      directionStats,
+      statusStats,
+      agentPerformance,
+      dailyTrend,
+      hourlyHeatmap,
+      tagAnalysis,
+      sentimentAnalysis,
+      callOutcomes,
+      peakHours,
+      businessPerformance,
+      weekdayAnalysis,
+      responseTimeStats,
+      recentCalls,
+    ] = await Promise.all([
+      // Current period totals
+      Call.aggregate([
+        { $match: dateFilter },
+        {
+          $group: {
+            _id: null,
+            totalCalls: { $sum: 1 },
+            totalDuration: { $sum: { $ifNull: ["$durationSeconds", 0] } },
+            avgDuration: { $avg: { $ifNull: ["$durationSeconds", 0] } },
+            withRecording: { $sum: { $cond: [{ $ifNull: ["$recordingUrl", false] }, 1, 0] } },
+            withTranscription: { $sum: { $cond: [{ $ifNull: ["$transcription.text", false] }, 1, 0] } },
+            withSummary: { $sum: { $cond: [{ $ifNull: ["$summary.text", false] }, 1, 0] } },
+            inbound: { $sum: { $cond: [{ $eq: ["$direction", "inbound"] }, 1, 0] } },
+            outbound: { $sum: { $cond: [{ $eq: ["$direction", "outbound"] }, 1, 0] } },
+          },
+        },
+      ]),
+
+      // Previous period totals for comparison
+      Call.aggregate([
+        { $match: prevDateFilter },
+        {
+          $group: {
+            _id: null,
+            totalCalls: { $sum: 1 },
+            totalDuration: { $sum: { $ifNull: ["$durationSeconds", 0] } },
+            avgDuration: { $avg: { $ifNull: ["$durationSeconds", 0] } },
+          },
+        },
+      ]),
+
+      // Direction breakdown with duration
+      Call.aggregate([
+        { $match: dateFilter },
+        {
+          $group: {
+            _id: "$direction",
+            count: { $sum: 1 },
+            totalDuration: { $sum: { $ifNull: ["$durationSeconds", 0] } },
+            avgDuration: { $avg: { $ifNull: ["$durationSeconds", 0] } },
+            completed: { $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] } },
+          },
+        },
+      ]),
+
+      // Status distribution
+      Call.aggregate([
+        { $match: dateFilter },
+        {
+          $group: {
+            _id: "$status",
+            count: { $sum: 1 },
+            avgDuration: { $avg: { $ifNull: ["$durationSeconds", 0] } },
+          },
+        },
+        { $sort: { count: -1 } },
+      ]),
+
+      // Agent performance with rankings
+      Call.aggregate([
+        { $match: { ...dateFilter, agentId: { $exists: true, $ne: null } } },
+        {
+          $group: {
+            _id: "$agentId",
+            totalCalls: { $sum: 1 },
+            totalDuration: { $sum: { $ifNull: ["$durationSeconds", 0] } },
+            avgDuration: { $avg: { $ifNull: ["$durationSeconds", 0] } },
+            completed: { $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] } },
+            inbound: { $sum: { $cond: [{ $eq: ["$direction", "inbound"] }, 1, 0] } },
+            outbound: { $sum: { $cond: [{ $eq: ["$direction", "outbound"] }, 1, 0] } },
+          },
+        },
+        {
+          $lookup: {
+            from: "users",
+            localField: "_id",
+            foreignField: "_id",
+            as: "agent",
+          },
+        },
+        { $unwind: { path: "$agent", preserveNullAndEmptyArrays: true } },
+        {
+          $project: {
+            agentId: "$_id",
+            agentName: { $ifNull: ["$agent.name", "$agent.email"] },
+            agentEmail: "$agent.email",
+            totalCalls: 1,
+            totalDuration: 1,
+            avgDuration: { $round: ["$avgDuration", 0] },
+            completed: 1,
+            inbound: 1,
+            outbound: 1,
+            completionRate: {
+              $round: [{ $multiply: [{ $divide: ["$completed", "$totalCalls"] }, 100] }, 1],
+            },
+          },
+        },
+        { $sort: { totalCalls: -1 } },
+        { $limit: 15 },
+      ]),
+
+      // Daily trend with more metrics
+      Call.aggregate([
+        { $match: dateFilter },
+        {
+          $group: {
+            _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+            total: { $sum: 1 },
+            inbound: { $sum: { $cond: [{ $eq: ["$direction", "inbound"] }, 1, 0] } },
+            outbound: { $sum: { $cond: [{ $eq: ["$direction", "outbound"] }, 1, 0] } },
+            completed: { $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] } },
+            totalDuration: { $sum: { $ifNull: ["$durationSeconds", 0] } },
+            avgDuration: { $avg: { $ifNull: ["$durationSeconds", 0] } },
+          },
+        },
+        { $sort: { _id: 1 } },
+      ]),
+
+      // Hourly heatmap data (hour x day of week)
+      Call.aggregate([
+        { $match: dateFilter },
+        {
+          $group: {
+            _id: {
+              hour: { $hour: "$createdAt" },
+              dayOfWeek: { $dayOfWeek: "$createdAt" },
+            },
+            count: { $sum: 1 },
+          },
+        },
+        { $sort: { "_id.dayOfWeek": 1, "_id.hour": 1 } },
+      ]),
+
+      // Tag analysis (AI and custom tags)
+      Call.aggregate([
+        { $match: { ...dateFilter, "tags.ai": { $exists: true, $ne: [] } } },
+        { $unwind: "$tags.ai" },
+        {
+          $group: {
+            _id: "$tags.ai",
+            count: { $sum: 1 },
+          },
+        },
+        { $sort: { count: -1 } },
+        { $limit: 20 },
+      ]),
+
+      // Sentiment analysis from AI tags
+      Call.aggregate([
+        { $match: { ...dateFilter, "tags.ai": { $exists: true } } },
+        {
+          $project: {
+            sentiment: {
+              $cond: [
+                { $in: ["positive", "$tags.ai"] },
+                "positive",
+                {
+                  $cond: [
+                    { $in: ["negative", "$tags.ai"] },
+                    "negative",
+                    "neutral",
+                  ],
+                },
+              ],
+            },
+          },
+        },
+        {
+          $group: {
+            _id: "$sentiment",
+            count: { $sum: 1 },
+          },
+        },
+      ]),
+
+      // Call outcomes analysis
+      Call.aggregate([
+        { $match: { ...dateFilter, "tags.ai": { $exists: true } } },
+        { $unwind: "$tags.ai" },
+        {
+          $match: {
+            "tags.ai": {
+              $in: [
+                "resolved",
+                "callback-needed",
+                "escalated",
+                "sale-closed",
+                "voicemail",
+                "no-answer",
+              ],
+            },
+          },
+        },
+        {
+          $group: {
+            _id: "$tags.ai",
+            count: { $sum: 1 },
+          },
+        },
+        { $sort: { count: -1 } },
+      ]),
+
+      // Peak hours analysis
+      Call.aggregate([
+        { $match: dateFilter },
+        {
+          $group: {
+            _id: { $hour: "$createdAt" },
+            count: { $sum: 1 },
+            avgDuration: { $avg: { $ifNull: ["$durationSeconds", 0] } },
+          },
+        },
+        { $sort: { count: -1 } },
+        { $limit: 5 },
+      ]),
+
+      // Business performance (top businesses by call volume)
+      Call.aggregate([
+        { $match: { ...dateFilter, businessName: { $exists: true, $ne: null, $ne: "" } } },
+        {
+          $group: {
+            _id: "$businessName",
+            totalCalls: { $sum: 1 },
+            totalDuration: { $sum: { $ifNull: ["$durationSeconds", 0] } },
+            avgDuration: { $avg: { $ifNull: ["$durationSeconds", 0] } },
+            inbound: { $sum: { $cond: [{ $eq: ["$direction", "inbound"] }, 1, 0] } },
+            outbound: { $sum: { $cond: [{ $eq: ["$direction", "outbound"] }, 1, 0] } },
+          },
+        },
+        { $sort: { totalCalls: -1 } },
+        { $limit: 10 },
+      ]),
+
+      // Weekday analysis
+      Call.aggregate([
+        { $match: dateFilter },
+        {
+          $group: {
+            _id: { $dayOfWeek: "$createdAt" },
+            count: { $sum: 1 },
+            avgDuration: { $avg: { $ifNull: ["$durationSeconds", 0] } },
+            completed: { $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] } },
+          },
+        },
+        { $sort: { _id: 1 } },
+      ]),
+
+      // Response time / first ring stats (using startTime vs createdAt)
+      Call.aggregate([
+        { $match: { ...dateFilter, direction: "inbound" } },
+        {
+          $group: {
+            _id: null,
+            totalInbound: { $sum: 1 },
+            answered: { $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] } },
+            missed: {
+              $sum: {
+                $cond: [
+                  { $in: ["$status", ["no-answer", "busy", "failed"]] },
+                  1,
+                  0,
+                ],
+              },
+            },
+          },
+        },
+      ]),
+
+      // Recent notable calls (long duration or with tags)
+      Call.find(dateFilter)
+        .sort({ durationSeconds: -1 })
+        .limit(5)
+        .select("direction fromNumber toNumber businessName durationSeconds status tags createdAt")
+        .lean(),
+    ]);
+
+    // Calculate metrics and changes
+    const current = currentStats[0] || {
+      totalCalls: 0,
+      totalDuration: 0,
+      avgDuration: 0,
+      withRecording: 0,
+      withTranscription: 0,
+      withSummary: 0,
+      inbound: 0,
+      outbound: 0,
+    };
+
+    const prev = prevStats[0] || { totalCalls: 0, totalDuration: 0, avgDuration: 0 };
+
+    // Calculate percentage changes
+    const calcChange = (curr, prev) => {
+      if (prev === 0) return curr > 0 ? 100 : 0;
+      return Math.round(((curr - prev) / prev) * 100);
+    };
+
+    // Build response rate
+    const completedCalls = statusStats.find((s) => s._id === "completed")?.count || 0;
+    const answerRate = current.totalCalls > 0 ? Math.round((completedCalls / current.totalCalls) * 100) : 0;
+
+    // Build hourly heatmap matrix
+    const heatmapMatrix = Array(7)
+      .fill(null)
+      .map(() => Array(24).fill(0));
+    hourlyHeatmap.forEach((item) => {
+      const day = item._id.dayOfWeek - 1; // MongoDB dayOfWeek is 1-7
+      const hour = item._id.hour;
+      if (day >= 0 && day < 7 && hour >= 0 && hour < 24) {
+        heatmapMatrix[day][hour] = item.count;
+      }
+    });
+
+    // Format weekday names
+    const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const weekdayData = weekdayAnalysis.map((w) => ({
+      day: weekdays[w._id - 1],
+      calls: w.count,
+      avgDuration: Math.round(w.avgDuration || 0),
+      completionRate: w.count > 0 ? Math.round((w.completed / w.count) * 100) : 0,
+    }));
+
+    // Format peak hours
+    const peakHoursFormatted = peakHours.map((h) => ({
+      hour: `${h._id}:00`,
+      calls: h.count,
+      avgDuration: Math.round(h.avgDuration || 0),
+    }));
+
+    // Sentiment distribution
+    const sentimentData = {
+      positive: sentimentAnalysis.find((s) => s._id === "positive")?.count || 0,
+      negative: sentimentAnalysis.find((s) => s._id === "negative")?.count || 0,
+      neutral: sentimentAnalysis.find((s) => s._id === "neutral")?.count || 0,
+    };
+
+    res.json({
+      success: true,
+      data: {
+        period: {
+          start: startDate.toISOString(),
+          end: endDate.toISOString(),
+          days: periodDays,
+        },
+        kpis: {
+          totalCalls: {
+            value: current.totalCalls,
+            change: calcChange(current.totalCalls, prev.totalCalls),
+            trend: current.totalCalls >= prev.totalCalls ? "up" : "down",
+          },
+          totalDuration: {
+            value: Math.round(current.totalDuration),
+            change: calcChange(current.totalDuration, prev.totalDuration),
+            trend: current.totalDuration >= prev.totalDuration ? "up" : "down",
+          },
+          avgDuration: {
+            value: Math.round(current.avgDuration || 0),
+            change: calcChange(current.avgDuration || 0, prev.avgDuration || 0),
+            trend: (current.avgDuration || 0) >= (prev.avgDuration || 0) ? "up" : "down",
+          },
+          answerRate: {
+            value: answerRate,
+            change: 0, // Would need prev period calculation
+            trend: "neutral",
+          },
+          withRecording: current.withRecording,
+          withTranscription: current.withTranscription,
+          withSummary: current.withSummary,
+          inboundCalls: current.inbound,
+          outboundCalls: current.outbound,
+        },
+        direction: directionStats.map((d) => ({
+          type: d._id || "unknown",
+          count: d.count,
+          totalDuration: Math.round(d.totalDuration || 0),
+          avgDuration: Math.round(d.avgDuration || 0),
+          completionRate: d.count > 0 ? Math.round((d.completed / d.count) * 100) : 0,
+        })),
+        status: statusStats.map((s) => ({
+          status: s._id || "unknown",
+          count: s.count,
+          avgDuration: Math.round(s.avgDuration || 0),
+          percentage: current.totalCalls > 0 ? Math.round((s.count / current.totalCalls) * 100) : 0,
+        })),
+        agents: agentPerformance,
+        dailyTrend,
+        heatmap: {
+          matrix: heatmapMatrix,
+          days: weekdays,
+          maxValue: Math.max(...heatmapMatrix.flat()),
+        },
+        tags: tagAnalysis.map((t) => ({ tag: t._id, count: t.count })),
+        sentiment: sentimentData,
+        outcomes: callOutcomes.map((o) => ({ outcome: o._id, count: o.count })),
+        peakHours: peakHoursFormatted,
+        businesses: businessPerformance.map((b) => ({
+          name: b._id,
+          totalCalls: b.totalCalls,
+          totalDuration: Math.round(b.totalDuration || 0),
+          avgDuration: Math.round(b.avgDuration || 0),
+          inbound: b.inbound,
+          outbound: b.outbound,
+        })),
+        weekdays: weekdayData,
+        responseStats: responseTimeStats[0] || { totalInbound: 0, answered: 0, missed: 0 },
+        recentNotable: recentCalls,
+      },
+    });
+  } catch (error) {
+    console.error("Analytics dashboard error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching analytics dashboard",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
+
+/**
+ * Generate AI insights for the dashboard
+ * POST /api/twilio/analytics/ai-insights
+ */
+exports.generateAIInsights = async (req, res) => {
+  try {
+    const { stats } = req.body;
+
+    if (!stats) {
+      return res.status(400).json({
+        success: false,
+        message: "Stats data is required",
+      });
+    }
+
+    const { createOpenAIClient, getOpenAIConfig } = require("../services/openaiService");
+    const openaiConfig = await getOpenAIConfig();
+    const client = await createOpenAIClient();
+
+    // Build context for AI
+    const context = `
+Analyze these call center statistics and provide actionable insights:
+
+Period: ${stats.period?.days || 30} days
+Total Calls: ${stats.kpis?.totalCalls?.value || 0} (${stats.kpis?.totalCalls?.change || 0}% vs previous period)
+Answer Rate: ${stats.kpis?.answerRate?.value || 0}%
+Average Duration: ${Math.round((stats.kpis?.avgDuration?.value || 0) / 60)} minutes
+Inbound: ${stats.kpis?.inboundCalls || 0}, Outbound: ${stats.kpis?.outboundCalls || 0}
+
+Top Call Tags: ${stats.tags?.slice(0, 5).map(t => t.tag).join(", ") || "None"}
+Sentiment: Positive ${stats.sentiment?.positive || 0}, Negative ${stats.sentiment?.negative || 0}, Neutral ${stats.sentiment?.neutral || 0}
+
+Peak Hours: ${stats.peakHours?.slice(0, 3).map(h => h.hour).join(", ") || "N/A"}
+
+Agent Count: ${stats.agents?.length || 0}
+${stats.agents?.length > 0 ? `Top Agent: ${stats.agents[0].agentName} with ${stats.agents[0].totalCalls} calls` : ""}
+
+Provide 4-5 specific, actionable insights in JSON format:
+{
+  "insights": [
+    {
+      "type": "trend|alert|recommendation|achievement",
+      "icon": "trending-up|trending-down|alert|star|phone|clock|users",
+      "title": "Brief title",
+      "description": "Detailed insight with specific numbers",
+      "priority": "high|medium|low"
+    }
+  ],
+  "summary": "One paragraph executive summary",
+  "recommendations": ["Action 1", "Action 2", "Action 3"]
+}`;
+
+    const completion = await client.chat.completions.create({
+      model: openaiConfig.model || "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: "You are a call center analytics expert. Analyze statistics and provide actionable business insights. Return valid JSON only.",
+        },
+        {
+          role: "user",
+          content: context,
+        },
+      ],
+      temperature: 0.5,
+      max_tokens: 800,
+    });
+
+    const responseText = completion.choices[0]?.message?.content?.trim();
+    let insights;
+
+    try {
+      insights = JSON.parse(responseText);
+    } catch (parseError) {
+      // Try to extract JSON from response
+      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        insights = JSON.parse(jsonMatch[0]);
+      } else {
+        throw new Error("Failed to parse AI response");
+      }
+    }
+
+    res.json({
+      success: true,
+      data: insights,
+    });
+  } catch (error) {
+    console.error("AI insights error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Failed to generate AI insights",
+    });
+  }
+};
+
+/**
+ * Export analytics dashboard to PDF
+ * POST /api/twilio/analytics/export-pdf
+ */
+exports.exportAnalyticsPDF = async (req, res) => {
+  try {
+    const { stats, insights, period } = req.body;
+
+    if (!stats) {
+      return res.status(400).json({
+        success: false,
+        message: "Stats data is required",
+      });
+    }
+
+    const { generatePDF } = require("../utils/pdfReportGenerator");
+
+    // Generate professional PDF
+    const pdfBuffer = await generatePDF(stats, insights);
+
+    // Set response headers
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename=Call-Analytics-Report-${new Date().toISOString().split("T")[0]}.pdf`
+    );
+
+    // Send buffer
+    res.send(pdfBuffer);
+  } catch (error) {
+    console.error("PDF export error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Failed to export PDF",
+    });
+  }
+};
+
+/**
+ * Send analytics report via email
+ * POST /api/twilio/analytics/email-report
+ */
+exports.emailAnalyticsReport = async (req, res) => {
+  try {
+    const { stats, insights, period, recipient, subject, message } = req.body;
+
+    if (!stats || !recipient) {
+      return res.status(400).json({
+        success: false,
+        message: "Stats data and recipient email are required",
+      });
+    }
+
+    // Validate email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(recipient)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid email address",
+      });
+    }
+
+    const nodemailer = require("nodemailer");
+    const { generatePDF, formatNumber } = require("../utils/pdfReportGenerator");
+
+    // Generate professional PDF buffer using shared generator
+    const pdfBuffer = await generatePDF(stats, insights);
+
+    // Send email
+    const transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST || "smtp.gmail.com",
+      port: parseInt(process.env.SMTP_PORT) || 587,
+      secure: process.env.SMTP_SECURE === "true",
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      },
+    });
+
+    const mailOptions = {
+      from: process.env.SMTP_FROM || process.env.SMTP_USER,
+      to: recipient,
+      subject: subject || "Call Analytics Report",
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <div style="background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%); padding: 30px; text-align: center;">
+            <h1 style="color: white; margin: 0; font-size: 24px;">Call Analytics Report</h1>
+            <p style="color: rgba(255,255,255,0.8); margin: 10px 0 0 0;">Generated on ${new Date().toLocaleDateString()}</p>
+          </div>
+
+          <div style="padding: 30px; background: #f9fafb;">
+            ${message ? `<p style="color: #374151; margin-bottom: 20px; padding: 15px; background: white; border-radius: 8px;">${message}</p>` : ""}
+
+            <div style="background: white; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+              <h2 style="color: #4F46E5; font-size: 16px; margin: 0 0 15px 0;">Quick Summary</h2>
+              <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb;">
+                    <span style="color: #6b7280;">Total Calls</span>
+                  </td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb; text-align: right; font-weight: bold;">
+                    ${stats.kpis?.totalCalls?.value || 0}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb;">
+                    <span style="color: #6b7280;">Answer Rate</span>
+                  </td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb; text-align: right; font-weight: bold;">
+                    ${stats.kpis?.answerRate?.value || 0}%
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb;">
+                    <span style="color: #6b7280;">Inbound / Outbound</span>
+                  </td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb; text-align: right; font-weight: bold;">
+                    ${stats.kpis?.inboundCalls || 0} / ${stats.kpis?.outboundCalls || 0}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0;">
+                    <span style="color: #6b7280;">AI Processed</span>
+                  </td>
+                  <td style="padding: 8px 0; text-align: right; font-weight: bold;">
+                    ${stats.kpis?.withTranscription || 0}
+                  </td>
+                </tr>
+              </table>
+            </div>
+
+            <p style="color: #6b7280; font-size: 14px; text-align: center;">
+              Please find the detailed PDF report attached.
+            </p>
+          </div>
+
+          <div style="padding: 20px; text-align: center; background: #f3f4f6;">
+            <p style="color: #9ca3af; font-size: 12px; margin: 0;">
+              This report was generated by MCA Call Management System
+            </p>
+          </div>
+        </div>
+      `,
+      attachments: [
+        {
+          filename: `Call-Analytics-Report-${new Date().toISOString().split("T")[0]}.pdf`,
+          content: pdfBuffer,
+          contentType: "application/pdf",
+        },
+      ],
+    };
+
+    await transporter.sendMail(mailOptions);
+
+    res.json({
+      success: true,
+      message: "Report sent successfully",
+    });
+  } catch (error) {
+    console.error("Email report error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Failed to send email report",
+    });
+  }
+};

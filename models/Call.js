@@ -131,6 +131,10 @@ callSchema.index({ createdAt: -1 });
 callSchema.index({ mcaId: 1, createdAt: -1 });
 callSchema.index({ agentId: 1, createdAt: -1 });
 callSchema.index({ status: 1, createdAt: -1 });
+callSchema.index({ direction: 1, createdAt: -1 });
+callSchema.index({ businessName: 1, createdAt: -1 });
+callSchema.index({ "tags.ai": 1 });
+callSchema.index({ "twilioTranscript.transcriptSid": 1 });
 
 callSchema.plugin(auditVersionPlugin);
 

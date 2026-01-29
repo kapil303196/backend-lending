@@ -183,10 +183,20 @@ const {
   generateCallTags,
   addCallTag,
   removeCallTag,
+  getAnalyticsDashboard,
+  generateAIInsights,
+  exportAnalyticsPDF,
+  emailAnalyticsReport,
 } = require("../controllers/twilioController");
 
 router.post("/calls/:callId/generate-tags", authenticate, requireAdmin, generateCallTags);
 router.post("/calls/:callId/tags", authenticate, requireAdmin, addCallTag);
 router.delete("/calls/:callId/tags/:tag", authenticate, requireAdmin, removeCallTag);
+
+// Advanced Analytics Dashboard
+router.get("/analytics/dashboard", authenticate, requireAdmin, getAnalyticsDashboard);
+router.post("/analytics/ai-insights", authenticate, requireAdmin, generateAIInsights);
+router.post("/analytics/export-pdf", authenticate, requireAdmin, exportAnalyticsPDF);
+router.post("/analytics/email-report", authenticate, requireAdmin, emailAnalyticsReport);
 
 module.exports = router;
