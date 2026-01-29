@@ -10,6 +10,14 @@
  * - Multilingual support
  * - Can integrate with Twilio's Language Operators for sentiment analysis
  *
+ * IMPORTANT: Channel Mapping for Voice SDK (Web Dialer)
+ * For dual-channel recordings with <Dial record="record-from-answer-dual"> via Voice SDK:
+ * - Channel 1 = PSTN/Remote party (Customer being called/calling)
+ * - Channel 2 = WebRTC/Local party (Agent using browser dialer)
+ *
+ * This is counter-intuitive because you might expect Channel 1 to be the "caller",
+ * but Twilio routes WebRTC audio (agent) to Channel 2 and PSTN audio (customer) to Channel 1.
+ *
  * NOTE: Twilio Conversational Intelligence API requires direct REST API calls
  * as it's not available in the standard twilio npm package.
  *
@@ -95,20 +103,34 @@ async function createTranscript(recordingSid, options = {}) {
 
     // Create transcript using Twilio's Conversational Intelligence REST API
     // Channel is passed as a JSON string in form-urlencoded format
+    //
+    // IMPORTANT: For dual-channel recordings with Voice SDK (web dialer):
+    // The channel mapping depends on how Twilio routes the audio:
+    // - For <Dial record="record-from-answer-dual"> with Voice SDK:
+    //   - Channel 1 = PSTN/Remote party (Customer being called)
+    //   - Channel 2 = WebRTC/Local party (Agent using browser dialer)
+    //
+    // This is because Twilio records the "inbound" leg (customer) on channel 1
+    // and the "outbound" leg (agent/browser) on channel 2 for Voice SDK calls.
+    //
+    // We swap the channel_participant values to correctly label speakers:
+    // - Customer -> channel_participant: 1
+    // - Agent -> channel_participant: 2
+    //
     const channelData = {
       media_properties: {
         source_sid: recordingSid,
       },
       participants: [
         {
-          user_id: options.agentId || "agent",
+          user_id: options.customerId || "customer",
           channel_participant: 1,
-          full_name: options.agentName || "Agent",
+          full_name: options.customerName || "Customer",
         },
         {
-          user_id: options.customerId || "customer",
+          user_id: options.agentId || "agent",
           channel_participant: 2,
-          full_name: options.customerName || "Customer",
+          full_name: options.agentName || "Agent",
         },
       ],
     };
@@ -139,9 +161,11 @@ async function createTranscript(recordingSid, options = {}) {
  * Get transcript status and content from Twilio Intelligence
  *
  * @param {string} transcriptSid - The Twilio Transcript SID
+ * @param {Object} options - Optional configuration
+ * @param {string} options.callDirection - Call direction ('inbound' or 'outbound')
  * @returns {Promise<Object>} Transcript with sentences
  */
-async function getTranscript(transcriptSid) {
+async function getTranscript(transcriptSid, options = {}) {
   try {
     // Get transcript details
     const transcript = await twilioIntelligenceRequest("GET", `Transcripts/${transcriptSid}`);
@@ -157,17 +181,84 @@ async function getTranscript(transcriptSid) {
           `Transcripts/${transcriptSid}/Sentences`
         );
 
+        // Log raw sentences for debugging - include ALL fields to understand what Twilio returns
+        const rawSample = sentencesResponse.sentences?.slice(0, 5);
+        console.log("Twilio Intelligence raw sentences structure:", JSON.stringify(rawSample, null, 2));
+
+        // Also log unique participant values to understand the data
+        const uniqueParticipants = [...new Set(sentencesResponse.sentences?.map(s => JSON.stringify({
+          participant: s.participant,
+          media_channel: s.media_channel,
+          participant_role: s.participant_role,
+          channel: s.channel
+        })) || [])];
+        console.log("Twilio Intelligence unique participant values:", uniqueParticipants);
+
         sentences = (sentencesResponse.sentences || []).map(s => ({
           participantId: s.participant,
+          participantRole: s.participant_role, // Twilio may return this
+          mediaChannel: s.media_channel, // This might indicate channel 1 or 2
           text: s.transcript,
           startTime: s.start_time,
           endTime: s.end_time,
           confidence: s.confidence,
         }));
 
+        // Determine speaker based on multiple possible fields from Twilio
+        //
+        // IMPORTANT: For Voice SDK (web dialer) dual-channel recordings:
+        // - Channel 1 = PSTN/Remote party (Customer on the phone)
+        // - Channel 2 = WebRTC/Local party (Agent using browser dialer)
+        //
+        // This is counter-intuitive but consistent with how Twilio routes audio
+        // for Voice SDK calls with <Dial record="record-from-answer-dual">.
+        //
+        const callDirection = options.callDirection || 'outbound';
+        console.log(`Twilio Intelligence: Mapping channels for ${callDirection} call`);
+
+        const getSpeakerLabel = (sentence) => {
+          // First check media_channel which is the most reliable indicator
+          const mediaChannel = sentence.mediaChannel || sentence.media_channel;
+
+          if (mediaChannel !== undefined && mediaChannel !== null) {
+            // For dual-channel recordings from Twilio Voice SDK with <Dial record="record-from-answer-dual">:
+            // Channel 1 = PSTN/Remote party (Customer)
+            // Channel 2 = WebRTC/Local party (Agent)
+            // This matches our participant configuration in createTranscript()
+            const channelNum = typeof mediaChannel === 'string' ? parseInt(mediaChannel, 10) : mediaChannel;
+            return channelNum === 1 ? "Customer" : "Agent";
+          }
+
+          // Fallback to participant_role if available
+          if (sentence.participantRole) {
+            return sentence.participantRole.toLowerCase().includes("agent") ? "Agent" : "Customer";
+          }
+
+          // Fallback to participant field - this should be our user_id values ("agent" or "customer")
+          const participant = sentence.participantId;
+          if (typeof participant === "string") {
+            // Check for our participant naming convention
+            if (participant.toLowerCase().includes("agent")) {
+              return "Agent";
+            }
+            if (participant.toLowerCase().includes("customer")) {
+              return "Customer";
+            }
+            // If it's a number string, use the corrected mapping
+            if (participant === "1") return "Customer";
+            if (participant === "2") return "Agent";
+          }
+          if (typeof participant === "number") {
+            // Channel 1 = Customer, Channel 2 = Agent (for Voice SDK)
+            return participant === 1 ? "Customer" : "Agent";
+          }
+
+          return "Unknown";
+        };
+
         // Combine all sentences into full text with speaker labels
         fullText = sentences
-          .map(s => `[${s.participantId === 1 ? "Agent" : "Customer"}]: ${s.text}`)
+          .map(s => `[${getSpeakerLabel(s)}]: ${s.text}`)
           .join("\n");
       } catch (sentenceError) {
         console.warn("Could not fetch sentences:", sentenceError.message);
@@ -400,8 +491,16 @@ async function handleTranscriptionWebhook(webhookData) {
   const isFailed = eventType === "voice_intelligence_transcript_failed";
 
   if (isCompleted) {
-    // Fetch the full transcript
-    const transcriptData = await getTranscript(transcriptSid);
+    // Fetch the full transcript, passing call direction for proper channel mapping
+    const transcriptData = await getTranscript(transcriptSid, {
+      callDirection: callDoc.direction || 'outbound',
+    });
+
+    // Debug: Log the transcript data to understand speaker labeling
+    console.log(`Twilio Intelligence: Call direction=${callDoc.direction}, fullText preview:`, transcriptData.fullText?.substring(0, 500));
+    if (transcriptData.sentences?.length > 0) {
+      console.log(`Twilio Intelligence: Sample sentence data:`, JSON.stringify(transcriptData.sentences.slice(0, 2), null, 2));
+    }
 
     callDoc.twilioTranscript = {
       transcriptSid: transcriptSid,
