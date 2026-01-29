@@ -124,6 +124,15 @@ router.get("/diagnostics", authenticate, requireAdmin, getDiagnostics);
 // List calls with filters
 router.get("/calls", authenticate, requireAdmin, listCalls);
 
+// Export calls to CSV (must be before /calls/:callId to avoid route conflict)
+router.get("/calls/export", authenticate, requireAdmin, exportCallsToCSV);
+
+// Call statistics (must be before /calls/:callId to avoid route conflict)
+router.get("/calls/stats", authenticate, requireAdmin, getCallStats);
+
+// Cleanup stale calls (must be before /calls/:callId to avoid route conflict)
+router.post("/calls/cleanup", authenticate, requireAdmin, cleanupStaleCalls);
+
 // Get single call details
 router.get("/calls/:callId", authenticate, requireAdmin, getCallById);
 
@@ -139,14 +148,6 @@ router.post("/calls/:callId/transcribe-twilio", authenticate, requireAdmin, tran
 // Get call transcript (works with both OpenAI and Twilio Intelligence)
 router.get("/calls/:callId/transcript", authenticate, requireAdmin, getTwilioTranscript);
 
-// Cleanup stale calls (mark old in-progress calls as failed)
-router.post("/calls/cleanup", authenticate, requireAdmin, cleanupStaleCalls);
-
-// Call statistics
-router.get("/calls/stats", authenticate, requireAdmin, getCallStats);
-
-// Export calls to CSV
-router.get("/calls/export", authenticate, requireAdmin, exportCallsToCSV);
 
 // Extension management
 router.get("/extensions", authenticate, requireAdmin, listExtensions);
