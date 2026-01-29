@@ -19,7 +19,7 @@ const {
   isValidPhoneNumber,
   isValidExtension,
 } = require("../middleware/twilioValidation");
-const { processCallRecording } = require("../services/openaiService");
+const { processCallRecording, downloadTwilioRecording } = require("../services/openaiService");
 
 /**
  * ============================================================================
@@ -603,6 +603,43 @@ exports.outboundBridge = async (req, res) => {
       normalizedTo
     );
 
+    // Create initial call record immediately (don't wait for status callback)
+    // This ensures the call appears in the dashboard right away
+    const callSid = req.body?.CallSid || req.query?.CallSid;
+    if (callSid) {
+      const callerIdUsed =
+        explicitCallerId ||
+        twilioConfig.outboundCallerId ||
+        twilioConfig.primaryNumber ||
+        "unknown";
+
+      try {
+        // Use upsert to avoid duplicates if status callback already created the record
+        let callDoc = await Call.findOne({ twilioCallSid: callSid });
+        if (!callDoc) {
+          callDoc = new Call({
+            twilioCallSid: callSid,
+            direction: "outbound",
+            fromNumber: callerIdUsed,
+            toNumber: normalizedTo,
+            status: "initiated",
+            startTime: new Date(),
+            metadata: {
+              source: "outbound-bridge",
+              dialerType: "web-softphone",
+            },
+          });
+          // Try to attach business context based on the destination number
+          await attachBusinessContext(callDoc);
+          await callDoc.save();
+          console.log(`Created initial call record for outbound call ${callSid} to ${normalizedTo}`);
+        }
+      } catch (saveError) {
+        // Don't fail the TwiML response if saving fails
+        console.error("Error creating initial call record:", saveError);
+      }
+    }
+
     res.type("text/xml");
     res.status(200).send(twiml.toString());
   } catch (error) {
@@ -1171,6 +1208,100 @@ exports.searchCompanies = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Error searching companies",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
+
+/**
+ * Diagnostic endpoint to verify Twilio configuration and webhook URLs
+ * GET /api/twilio/diagnostics
+ */
+exports.getDiagnostics = async (req, res) => {
+  try {
+    const twilioConfig = await getTwilioConfig();
+    const baseUrl = getBaseUrl(req);
+
+    // Build all the webhook URLs that need to be configured
+    const webhookUrls = {
+      inboundVoice: buildTwiMLUrl(baseUrl, "/voice/inbound"),
+      outboundBridge: buildTwiMLUrl(baseUrl, "/outbound-bridge"),
+      callStatus: buildTwiMLUrl(baseUrl, "/call-status"),
+      recordingStatus: buildTwiMLUrl(baseUrl, "/recording-status"),
+      voicemailGreeting: buildTwiMLUrl(baseUrl, "/voicemail-greeting"),
+      voicemail: buildTwiMLUrl(baseUrl, "/voicemail"),
+    };
+
+    // Check configuration status
+    const configStatus = {
+      hasAccountSid: !!twilioConfig.accountSid,
+      hasAuthToken: !!twilioConfig.authToken,
+      hasApiKey: !!twilioConfig.apiKey,
+      hasApiSecret: !!twilioConfig.apiSecret,
+      hasTwimlAppSid: !!twilioConfig.twimlAppSid,
+      hasPrimaryNumber: !!twilioConfig.primaryNumber,
+      hasOutboundCallerId: !!twilioConfig.outboundCallerId,
+      recordingsEnabled: twilioConfig.recordings?.enabled ?? false,
+    };
+
+    // Generate setup instructions
+    const setupInstructions = [];
+
+    if (!configStatus.hasApiKey || !configStatus.hasApiSecret) {
+      setupInstructions.push({
+        step: 1,
+        title: "Create API Key",
+        description: "Go to Twilio Console → Account → API Keys & Tokens → Create API Key",
+        url: "https://console.twilio.com/us1/account/keys-credentials/api-keys",
+      });
+    }
+
+    if (!configStatus.hasTwimlAppSid) {
+      setupInstructions.push({
+        step: 2,
+        title: "Create TwiML Application",
+        description: `Go to Twilio Console → Voice → TwiML Apps → Create new TwiML App. Set Voice URL to: ${webhookUrls.outboundBridge}`,
+        url: "https://console.twilio.com/us1/develop/voice/manage/twiml-apps",
+        voiceUrl: webhookUrls.outboundBridge,
+      });
+    }
+
+    setupInstructions.push({
+      step: 3,
+      title: "Configure Phone Number Webhooks",
+      description: `Go to Twilio Console → Phone Numbers → Active Numbers → Select your number. Set Voice webhook to: ${webhookUrls.inboundVoice}`,
+      url: "https://console.twilio.com/us1/develop/phone-numbers/manage/incoming",
+      voiceUrl: webhookUrls.inboundVoice,
+    });
+
+    res.json({
+      success: true,
+      data: {
+        baseUrl,
+        webhookUrls,
+        configStatus,
+        setupInstructions,
+        // Masked credentials for verification
+        credentials: {
+          accountSid: twilioConfig.accountSid
+            ? `${twilioConfig.accountSid.substring(0, 6)}...${twilioConfig.accountSid.slice(-4)}`
+            : null,
+          twimlAppSid: twilioConfig.twimlAppSid
+            ? `${twilioConfig.twimlAppSid.substring(0, 6)}...${twilioConfig.twimlAppSid.slice(-4)}`
+            : null,
+          primaryNumber: twilioConfig.primaryNumber || null,
+          outboundCallerId: twilioConfig.outboundCallerId || null,
+        },
+        // Check if the API is accessible
+        apiAccessible: true,
+        timestamp: new Date().toISOString(),
+      },
+    });
+  } catch (error) {
+    console.error("Diagnostics error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching diagnostics",
       error: process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
@@ -1975,6 +2106,182 @@ exports.listTwilioCallerIds = async (req, res) => {
       message: "Error fetching Twilio caller IDs",
       error:
         process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
+
+/**
+ * Proxy endpoint for streaming Twilio recordings
+ * This avoids exposing Twilio credentials to the frontend
+ * GET /api/twilio/calls/:callId/recording
+ */
+exports.getCallRecording = async (req, res) => {
+  try {
+    const { callId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(callId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid call ID format",
+      });
+    }
+
+    const call = await Call.findById(callId).lean();
+
+    if (!call) {
+      return res.status(404).json({
+        success: false,
+        message: "Call not found",
+      });
+    }
+
+    if (!call.recordingUrl) {
+      return res.status(404).json({
+        success: false,
+        message: "No recording available for this call",
+      });
+    }
+
+    // Download the recording from Twilio with authentication
+    const { buffer, contentType } = await downloadTwilioRecording(
+      call.recordingUrl
+    );
+
+    // Set appropriate headers for audio streaming
+    res.set({
+      "Content-Type": contentType,
+      "Content-Length": buffer.length,
+      "Content-Disposition": `inline; filename="recording-${callId}.mp3"`,
+      "Cache-Control": "private, max-age=3600", // Cache for 1 hour
+    });
+
+    res.send(buffer);
+  } catch (error) {
+    console.error("Get call recording error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching recording",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
+
+/**
+ * Manually trigger transcription and summary for a call
+ * POST /api/twilio/calls/:callId/transcribe
+ */
+exports.transcribeCall = async (req, res) => {
+  try {
+    const { callId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(callId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid call ID format",
+      });
+    }
+
+    const call = await Call.findById(callId);
+
+    if (!call) {
+      return res.status(404).json({
+        success: false,
+        message: "Call not found",
+      });
+    }
+
+    if (!call.recordingUrl) {
+      return res.status(400).json({
+        success: false,
+        message: "No recording available for this call. Cannot transcribe.",
+      });
+    }
+
+    // Check if already transcribed
+    if (call.transcription?.status === "completed" && call.transcription?.text) {
+      return res.json({
+        success: true,
+        message: "Call already transcribed",
+        data: {
+          transcription: call.transcription.text,
+          summary: call.summary?.text || null,
+        },
+      });
+    }
+
+    // Process the recording (transcribe + summarize)
+    const result = await processCallRecording(call);
+
+    // Reload the call to get updated data
+    const updatedCall = await Call.findById(callId).lean();
+
+    res.json({
+      success: true,
+      message:
+        result.errors.length > 0
+          ? "Processing completed with some errors"
+          : "Transcription and summary completed successfully",
+      data: {
+        transcription: updatedCall.transcription?.text || null,
+        transcriptionStatus: updatedCall.transcription?.status || "pending",
+        summary: updatedCall.summary?.text || null,
+        summaryStatus: updatedCall.summary?.status || "pending",
+        errors: result.errors,
+      },
+    });
+  } catch (error) {
+    console.error("Transcribe call error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error transcribing call",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
+
+/**
+ * Get a single call with full details
+ * GET /api/twilio/calls/:callId
+ */
+exports.getCallById = async (req, res) => {
+  try {
+    const { callId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(callId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid call ID format",
+      });
+    }
+
+    const call = await Call.findById(callId)
+      .populate("mcaId", "company uniqueId")
+      .populate("userResponseId", "uniqueId formData")
+      .populate("agentId", "name email")
+      .lean();
+
+    if (!call) {
+      return res.status(404).json({
+        success: false,
+        message: "Call not found",
+      });
+    }
+
+    // Add a proxied recording URL if recording exists
+    if (call.recordingUrl) {
+      call.recordingProxyUrl = `/api/twilio/calls/${callId}/recording`;
+    }
+
+    res.json({
+      success: true,
+      data: call,
+    });
+  } catch (error) {
+    console.error("Get call by ID error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching call",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
 };
