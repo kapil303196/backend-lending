@@ -306,6 +306,95 @@ async function processCallRecording(callDoc) {
   }
 }
 
+/**
+ * Generate AI tags for a call based on transcription and summary
+ * @param {string} transcription - Transcribed text
+ * @param {string} summary - Summary text (optional, but helpful)
+ * @param {Object} callContext - Call context (direction, businessName, etc.)
+ * @returns {Promise<string[]>} Array of tags
+ * @throws {Error} If tag generation fails
+ */
+async function generateCallTags(transcription, summary = "", callContext = {}) {
+  try {
+    const openaiConfig = await getOpenAIConfig();
+    const client = await createOpenAIClient();
+
+    const direction = callContext.direction || "call";
+    const businessName = callContext.businessName || "";
+
+    // Combine transcription and summary for better context
+    const content = summary
+      ? `Summary: ${summary}\n\nTranscription: ${transcription}`
+      : transcription;
+
+    const prompt = `Analyze this ${direction} call and generate 3-6 short, relevant tags to categorize it.
+
+${businessName ? `Business: ${businessName}\n` : ""}
+Call Content:
+${content}
+
+Generate tags that describe:
+- Call type (e.g., "inquiry", "complaint", "follow-up", "sales", "support")
+- Topic discussed (e.g., "pricing", "account", "technical", "billing")
+- Outcome (e.g., "resolved", "callback-needed", "escalated", "sale-closed")
+- Sentiment (e.g., "positive", "negative", "neutral")
+
+Return ONLY a JSON array of lowercase tag strings, no explanation. Example: ["inquiry", "pricing", "positive", "resolved"]`;
+
+    const completion = await client.chat.completions.create({
+      model: openaiConfig.model || "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: "You are a call analysis assistant. Generate concise, relevant tags for categorizing calls. Return only a valid JSON array of tag strings.",
+        },
+        {
+          role: "user",
+          content: prompt,
+        },
+      ],
+      temperature: 0.3,
+      max_tokens: 100,
+    });
+
+    const responseText = completion.choices[0]?.message?.content?.trim();
+    if (!responseText) {
+      throw new Error("Empty response from OpenAI");
+    }
+
+    // Parse JSON array from response
+    try {
+      const tags = JSON.parse(responseText);
+      if (!Array.isArray(tags)) {
+        throw new Error("Response is not an array");
+      }
+      // Ensure all tags are strings and lowercase
+      return tags
+        .filter((tag) => typeof tag === "string")
+        .map((tag) => tag.toLowerCase().trim())
+        .filter((tag) => tag.length > 0 && tag.length <= 30)
+        .slice(0, 6); // Max 6 tags
+    } catch (parseError) {
+      console.error("Failed to parse tags JSON:", responseText);
+      // Try to extract tags from text if JSON parsing fails
+      const tagMatch = responseText.match(/\[(.*?)\]/s);
+      if (tagMatch) {
+        const tagStrings = tagMatch[1].match(/"([^"]+)"/g);
+        if (tagStrings) {
+          return tagStrings
+            .map((t) => t.replace(/"/g, "").toLowerCase().trim())
+            .filter((t) => t.length > 0 && t.length <= 30)
+            .slice(0, 6);
+        }
+      }
+      throw new Error("Failed to parse tags from response");
+    }
+  } catch (error) {
+    console.error("OpenAI tag generation error:", error);
+    throw new Error(`Tag generation failed: ${error.message || "Unknown error"}`);
+  }
+}
+
 module.exports = {
   getOpenAIConfig,
   createOpenAIClient,
@@ -313,4 +402,5 @@ module.exports = {
   summarizeTranscription,
   processCallRecording,
   downloadTwilioRecording,
+  generateCallTags,
 };

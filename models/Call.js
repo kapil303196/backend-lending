@@ -91,6 +91,13 @@ const callSchema = new mongoose.Schema(
       model: String, // OpenAI model used
     },
 
+    // AI-generated and custom tags for call categorization
+    tags: {
+      ai: [{ type: String }], // AI-generated tags from transcription analysis
+      custom: [{ type: String }], // User-added custom tags
+      aiGeneratedAt: Date,
+    },
+
     // Associations
     mcaId: {
       type: mongoose.Schema.Types.ObjectId,

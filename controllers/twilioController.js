@@ -831,13 +831,20 @@ exports.outboundBridge = async (req, res) => {
       normalizedTo
     );
 
+    // Extract agent info from params (passed from frontend dialer)
+    const agentId = req.query?.AgentId || req.body?.AgentId || null;
+    const agentEmail = req.query?.AgentEmail || req.body?.AgentEmail || null;
+    const agentName = req.query?.AgentName || req.body?.AgentName || null;
+
+    console.log(`Outbound bridge agent info: AgentId=${agentId}, AgentEmail=${agentEmail}, AgentName=${agentName}`);
+
     // Create initial call record immediately for the PARENT call
     // This is the main call record that will be displayed in the dashboard
     if (callSid) {
       try {
         let callDoc = await Call.findOne({ twilioCallSid: callSid });
         if (!callDoc) {
-          callDoc = new Call({
+          const callData = {
             twilioCallSid: callSid,
             direction: "outbound",
             fromNumber: callerIdUsed || "unknown",
@@ -848,18 +855,34 @@ exports.outboundBridge = async (req, res) => {
               source: "web-dialer",
               dialerType: "voice-sdk",
               customerNumber: normalizedTo,
+              agentEmail: agentEmail,
+              agentName: agentName,
             },
-          });
+          };
+
+          // Associate agent if ID provided and valid
+          if (agentId && mongoose.Types.ObjectId.isValid(agentId)) {
+            callData.agentId = agentId;
+          }
+
+          callDoc = new Call(callData);
           // Try to attach business context based on the destination number
           await attachBusinessContext(callDoc);
           await callDoc.save();
-          console.log(`Created call record for ${callSid} -> ${normalizedTo}`);
+          console.log(`Created call record for ${callSid} -> ${normalizedTo} (Agent: ${agentId || 'unknown'})`);
         } else {
           // Update existing record if it was created by a previous webhook
           callDoc.status = "ringing";
           callDoc.toNumber = normalizedTo;
+          // Update agent if not already set
+          if (agentId && mongoose.Types.ObjectId.isValid(agentId) && !callDoc.agentId) {
+            callDoc.agentId = agentId;
+          }
+          if (!callDoc.metadata) callDoc.metadata = {};
+          if (agentEmail) callDoc.metadata.agentEmail = agentEmail;
+          if (agentName) callDoc.metadata.agentName = agentName;
           await callDoc.save();
-          console.log(`Updated existing call record ${callSid} to ringing`);
+          console.log(`Updated existing call record ${callSid} to ringing (Agent: ${callDoc.agentId || 'unknown'})`);
         }
       } catch (saveError) {
         // Don't fail the TwiML response if saving fails
@@ -3120,6 +3143,198 @@ exports.getIntelligenceStatus = async (req, res) => {
     res.status(500).json({
       success: false,
       message: error.message || "Failed to check Intelligence status",
+    });
+  }
+};
+
+/**
+ * Generate AI tags for a call
+ * POST /api/twilio/calls/:callId/generate-tags
+ */
+exports.generateCallTags = async (req, res) => {
+  try {
+    const { callId } = req.params;
+
+    // Validate ObjectId
+    if (!mongoose.Types.ObjectId.isValid(callId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid call ID format",
+      });
+    }
+
+    const call = await Call.findById(callId);
+    if (!call) {
+      return res.status(404).json({
+        success: false,
+        message: "Call not found",
+      });
+    }
+
+    // Check if transcription exists
+    if (!call.transcription?.text) {
+      return res.status(400).json({
+        success: false,
+        message: "No transcription available. Please transcribe the call first.",
+      });
+    }
+
+    // Generate tags using OpenAI
+    const { generateCallTags: generateTags } = require("../services/openaiService");
+
+    const tags = await generateTags(
+      call.transcription.text,
+      call.summary?.text || "",
+      {
+        direction: call.direction,
+        businessName: call.businessName,
+      }
+    );
+
+    // Update call with AI tags
+    if (!call.tags) {
+      call.tags = { ai: [], custom: [] };
+    }
+    call.tags.ai = tags;
+    call.tags.aiGeneratedAt = new Date();
+    await call.save();
+
+    res.json({
+      success: true,
+      message: "Tags generated successfully",
+      tags: call.tags,
+    });
+  } catch (error) {
+    console.error("Generate tags error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Failed to generate tags",
+    });
+  }
+};
+
+/**
+ * Add custom tag to a call
+ * POST /api/twilio/calls/:callId/tags
+ */
+exports.addCallTag = async (req, res) => {
+  try {
+    const { callId } = req.params;
+    const { tag } = req.body;
+
+    if (!tag || typeof tag !== "string") {
+      return res.status(400).json({
+        success: false,
+        message: "Tag is required and must be a string",
+      });
+    }
+
+    // Validate ObjectId
+    if (!mongoose.Types.ObjectId.isValid(callId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid call ID format",
+      });
+    }
+
+    const call = await Call.findById(callId);
+    if (!call) {
+      return res.status(404).json({
+        success: false,
+        message: "Call not found",
+      });
+    }
+
+    // Initialize tags if not exists
+    if (!call.tags) {
+      call.tags = { ai: [], custom: [] };
+    }
+
+    // Normalize tag (lowercase, trimmed, max 30 chars)
+    const normalizedTag = tag.toLowerCase().trim().slice(0, 30);
+
+    // Check if tag already exists
+    if (call.tags.custom.includes(normalizedTag)) {
+      return res.status(400).json({
+        success: false,
+        message: "Tag already exists",
+      });
+    }
+
+    // Add tag
+    call.tags.custom.push(normalizedTag);
+    await call.save();
+
+    res.json({
+      success: true,
+      message: "Tag added successfully",
+      tags: call.tags,
+    });
+  } catch (error) {
+    console.error("Add tag error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Failed to add tag",
+    });
+  }
+};
+
+/**
+ * Remove custom tag from a call
+ * DELETE /api/twilio/calls/:callId/tags/:tag
+ */
+exports.removeCallTag = async (req, res) => {
+  try {
+    const { callId, tag } = req.params;
+
+    // Validate ObjectId
+    if (!mongoose.Types.ObjectId.isValid(callId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid call ID format",
+      });
+    }
+
+    const call = await Call.findById(callId);
+    if (!call) {
+      return res.status(404).json({
+        success: false,
+        message: "Call not found",
+      });
+    }
+
+    if (!call.tags?.custom) {
+      return res.status(400).json({
+        success: false,
+        message: "No custom tags on this call",
+      });
+    }
+
+    // Normalize tag for comparison
+    const normalizedTag = decodeURIComponent(tag).toLowerCase().trim();
+
+    // Remove tag
+    const index = call.tags.custom.indexOf(normalizedTag);
+    if (index === -1) {
+      return res.status(404).json({
+        success: false,
+        message: "Tag not found",
+      });
+    }
+
+    call.tags.custom.splice(index, 1);
+    await call.save();
+
+    res.json({
+      success: true,
+      message: "Tag removed successfully",
+      tags: call.tags,
+    });
+  } catch (error) {
+    console.error("Remove tag error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Failed to remove tag",
     });
   }
 };

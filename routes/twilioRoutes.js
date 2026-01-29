@@ -177,4 +177,15 @@ router.get("/intelligence/status", authenticate, requireAdmin, getIntelligenceSt
 // Sync call duration from recording (for fixing duration mismatches)
 router.post("/calls/:callId/sync-duration", authenticate, requireAdmin, syncCallDuration);
 
+// Call tagging - AI-generated and custom tags
+const {
+  generateCallTags,
+  addCallTag,
+  removeCallTag,
+} = require("../controllers/twilioController");
+
+router.post("/calls/:callId/generate-tags", authenticate, requireAdmin, generateCallTags);
+router.post("/calls/:callId/tags", authenticate, requireAdmin, addCallTag);
+router.delete("/calls/:callId/tags/:tag", authenticate, requireAdmin, removeCallTag);
+
 module.exports = router;

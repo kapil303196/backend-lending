@@ -290,6 +290,8 @@ async function processRecordingWithTwilioIntelligence(callDoc) {
     };
     await callDoc.save();
 
+    console.log(`Twilio Intelligence: Saved transcriptSid ${result.transcriptSid} to call ${callDoc.twilioCallSid} (recordingSid: ${callDoc.recordingSid})`);
+
     return {
       success: true,
       transcriptSid: result.transcriptSid,
@@ -325,6 +327,9 @@ async function processRecordingWithTwilioIntelligence(callDoc) {
 async function handleTranscriptionWebhook(webhookData) {
   const Call = require("../models/Call");
 
+  // Log full webhook data for debugging
+  console.log("Twilio Intelligence webhook full payload:", JSON.stringify(webhookData, null, 2));
+
   // Twilio uses snake_case in webhooks
   const transcriptSid = webhookData.transcript_sid || webhookData.TranscriptSid;
   const eventType = webhookData.event_type || webhookData.EventType;
@@ -342,8 +347,51 @@ async function handleTranscriptionWebhook(webhookData) {
     "twilioTranscript.transcriptSid": transcriptSid,
   });
 
+  // If not found by transcriptSid, try to get transcript details and find by recording SID
   if (!callDoc) {
+    console.log(`Twilio Intelligence: No call found by transcriptSid, attempting to fetch transcript details...`);
+
+    try {
+      // Fetch transcript to get the source recording SID
+      const transcriptDetails = await twilioIntelligenceRequest("GET", `Transcripts/${transcriptSid}`);
+      console.log("Transcript details:", JSON.stringify(transcriptDetails, null, 2));
+
+      // The channel contains media_properties with source_sid (recording SID)
+      const channel = transcriptDetails.channel;
+      let recordingSid = null;
+
+      if (channel) {
+        // Channel can be a JSON string or object
+        const channelData = typeof channel === "string" ? JSON.parse(channel) : channel;
+        recordingSid = channelData?.media_properties?.source_sid;
+      }
+
+      if (recordingSid) {
+        console.log(`Twilio Intelligence: Looking up call by recordingSid=${recordingSid}`);
+        callDoc = await Call.findOne({ recordingSid: recordingSid });
+
+        if (callDoc) {
+          console.log(`Twilio Intelligence: Found call ${callDoc.twilioCallSid} by recordingSid`);
+          // Update the transcriptSid in the call record since we found it by recording
+          if (!callDoc.twilioTranscript) {
+            callDoc.twilioTranscript = {};
+          }
+          callDoc.twilioTranscript.transcriptSid = transcriptSid;
+        }
+      }
+    } catch (fetchError) {
+      console.error("Failed to fetch transcript details for lookup:", fetchError.message);
+    }
+  }
+
+  if (!callDoc) {
+    // List recent calls with pending/processing transcripts for debugging
+    const recentCalls = await Call.find({
+      "twilioTranscript.status": { $in: ["pending", "processing"] }
+    }).select("twilioCallSid recordingSid twilioTranscript").limit(5);
+
     console.warn(`Twilio Intelligence webhook: No call found for TranscriptSid=${transcriptSid}`);
+    console.log("Recent calls with pending transcripts:", JSON.stringify(recentCalls, null, 2));
     return null;
   }
 
