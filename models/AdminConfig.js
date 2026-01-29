@@ -42,6 +42,10 @@ const adminConfigSchema = new mongoose.Schema(
       primaryNumber: { type: String, default: "" }, // Main business number
       outboundCallerId: { type: String, default: "" }, // Caller ID for outbound calls
 
+      // TwiML Application SID (required for Voice SDK / web dialer)
+      // Create this in Twilio Console > Voice > TwiML Apps
+      twimlAppSid: { type: String, default: "" },
+
       // Recording behaviour toggles
       recordings: {
         enabled: { type: Boolean, default: true },

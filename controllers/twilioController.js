@@ -1179,6 +1179,12 @@ exports.searchCompanies = async (req, res) => {
 /**
  * Generate Twilio access token for web-based softphone (Client SDK)
  * GET /api/twilio/dialer/token
+ *
+ * IMPORTANT: For the web dialer to work, you need:
+ * 1. A TwiML Application created in Twilio Console (Voice > TwiML Apps)
+ * 2. The TwiML App's Voice URL set to: https://your-api-domain.com/api/twilio/outbound-bridge
+ * 3. API Key and API Secret configured (not just Account SID/Auth Token)
+ * 4. The twimlAppSid stored in AdminConfig.twilio or TwilioAccount
  */
 exports.generateDialerToken = async (req, res) => {
   try {
@@ -1192,7 +1198,15 @@ exports.generateDialerToken = async (req, res) => {
     if (!twilioConfig.apiKey || !twilioConfig.apiSecret) {
       return res.status(400).json({
         success: false,
-        message: "Twilio API Key and API Secret must be configured for web dialer. Please configure them in admin panel.",
+        message: "Twilio API Key and API Secret must be configured for web dialer. Please create an API Key in Twilio Console > Account > API Keys & Tokens, then configure them in the admin panel.",
+      });
+    }
+
+    // Check if TwiML App SID is configured (required for Voice SDK outbound calls)
+    if (!twilioConfig.twimlAppSid) {
+      return res.status(400).json({
+        success: false,
+        message: "TwiML Application SID must be configured for web dialer. Please create a TwiML App in Twilio Console > Voice > TwiML Apps, set its Voice URL to your /api/twilio/outbound-bridge endpoint, then configure the App SID in the admin panel.",
       });
     }
 
@@ -1200,7 +1214,7 @@ exports.generateDialerToken = async (req, res) => {
     const AccessToken = twilio.jwt.AccessToken;
     const VoiceGrant = AccessToken.VoiceGrant;
 
-    // Create identity for the user
+    // Create identity for the user (must be unique per user/session)
     const identity = req.user?.email || `agent-${req.user?.id || Date.now()}`;
 
     // Create access token
@@ -1214,20 +1228,19 @@ exports.generateDialerToken = async (req, res) => {
       }
     );
 
-    // Add voice grant
-    // For Client SDK, we need to provide a TwiML URL that handles the call
-    const baseUrl = getBaseUrl(req);
-    const voiceUrl = buildTwiMLUrl(baseUrl, "/outbound-bridge");
-
+    // Add voice grant with TwiML Application SID
+    // The TwiML App's Voice URL will be called when device.connect() is invoked
+    // Twilio will POST to that URL with the parameters passed in device.connect({ params })
     const voiceGrant = new VoiceGrant({
-      outgoingApplicationSid: undefined, // Not using App SID, using URL instead
-      incomingAllow: false, // Only outbound calls
+      outgoingApplicationSid: twilioConfig.twimlAppSid, // TwiML App SID (REQUIRED for outbound)
+      incomingAllow: false, // Only outbound calls for now
     });
-    
-    // Note: The Client SDK will pass the 'To' parameter in the call params
-    // The outbound-bridge endpoint will extract it and dial the number
 
     token.addGrant(voiceGrant);
+
+    // Build voice URL for reference (the TwiML App should be configured with this URL)
+    const baseUrl = getBaseUrl(req);
+    const voiceUrl = buildTwiMLUrl(baseUrl, "/outbound-bridge");
 
     res.json({
       success: true,
@@ -1237,7 +1250,8 @@ exports.generateDialerToken = async (req, res) => {
         accountSid: twilioConfig.accountSid,
         primaryNumber: twilioConfig.primaryNumber,
         outboundCallerId: twilioConfig.outboundCallerId || twilioConfig.primaryNumber,
-        voiceUrl: voiceUrl, // For reference
+        voiceUrl: voiceUrl, // For reference - TwiML App should use this URL
+        twimlAppSid: twilioConfig.twimlAppSid, // For debugging
         // Multi-account aware clients can use this metadata
         twilioAccountId: twilioConfig._accountId || null,
         phoneNumbers: twilioConfig._phoneNumbers || [],

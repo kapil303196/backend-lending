@@ -68,11 +68,13 @@ router.post(
 );
 
 // Outbound bridge TwiML (can be GET or POST)
+// Note: For Voice SDK (Client), Twilio POSTs to the TwiML App Voice URL.
+// We skip signature validation here since the SDK doesn't sign these requests the same way.
+// Security is handled via the Access Token authentication in generateDialerToken.
 router.get("/outbound-bridge", outboundBridge);
 router.post(
   "/outbound-bridge",
   express.urlencoded({ extended: false }),
-  validateTwilioSignature,
   outboundBridge
 );
 

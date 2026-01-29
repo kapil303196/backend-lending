@@ -21,6 +21,10 @@ const twilioAccountSchema = new mongoose.Schema(
     apiKey: { type: String, default: "" },
     apiSecret: { type: String, default: "" },
 
+    // TwiML Application SID (required for Voice SDK / web dialer)
+    // Create this in Twilio Console > Voice > TwiML Apps
+    twimlAppSid: { type: String, default: "" },
+
     // Numbers associated with this account
     phoneNumbers: {
       type: [phoneNumberSchema],
