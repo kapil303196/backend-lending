@@ -673,13 +673,21 @@ exports.handleRecordingStatus = async (req, res) => {
     }
 
     // If call record exists and recording is ready, trigger transcription/summary processing
-    if (updatedCall) {
-      // Check if call is completed and recording is available
-      const isCallCompleted = ["completed", "busy", "failed", "no-answer", "canceled"].includes(
-        updatedCall.status?.toLowerCase()
-      );
+    // NOTE: Recording status "completed" means the call has ended and recording is ready
+    // We don't need to wait for call status to be "completed" - having a recording means call ended
+    if (updatedCall && updatedCall.recordingUrl && updatedCall.recordingSid) {
+      // Check if already transcribed to avoid duplicate processing
+      const alreadyTranscribed = updatedCall.transcription?.status === "completed" ||
+                                  updatedCall.transcription?.status === "processing";
 
-      if (isCallCompleted && updatedCall.recordingUrl && updatedCall.recordingSid) {
+      if (!alreadyTranscribed) {
+        // Mark call as completed if not already (recording completed = call ended)
+        if (!["completed", "busy", "failed", "no-answer", "canceled"].includes(updatedCall.status?.toLowerCase())) {
+          updatedCall.status = "completed";
+          await updatedCall.save();
+          console.log(`Updated call ${updatedCall.twilioCallSid} status to completed (recording received)`);
+        }
+
         // Check if Twilio Intelligence is enabled - prefer it over OpenAI Whisper
         const adminConfig = await AdminConfig.findOne({ configId: "default" });
         const useTwilioIntelligence = adminConfig?.twilioIntelligence?.enabled &&
@@ -704,6 +712,8 @@ exports.handleRecordingStatus = async (req, res) => {
           });
           console.log(`Using OpenAI Whisper for transcription of call ${updatedCall.twilioCallSid}`);
         }
+      } else {
+        console.log(`Call ${updatedCall.twilioCallSid} already transcribed/processing, skipping`);
       }
     }
 
