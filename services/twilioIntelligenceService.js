@@ -36,9 +36,10 @@ async function getTwilioIntelligenceConfig() {
 
 /**
  * Make authenticated request to Twilio Conversational Intelligence API
+ * Twilio uses form-urlencoded for POST requests, not JSON
  * @param {string} method - HTTP method
  * @param {string} endpoint - API endpoint (after /v2/)
- * @param {Object} data - Request body (for POST/PUT)
+ * @param {Object} data - Request body (for POST/PUT) - will be form-encoded
  * @returns {Promise<Object>} API response
  */
 async function twilioIntelligenceRequest(method, endpoint, data = null) {
@@ -53,13 +54,22 @@ async function twilioIntelligenceRequest(method, endpoint, data = null) {
       username: twilioConfig.accountSid,
       password: twilioConfig.authToken,
     },
-    headers: {
-      "Content-Type": "application/json",
-    },
   };
 
   if (data && (method === "POST" || method === "PUT")) {
-    config.data = data;
+    // Twilio uses form-urlencoded, not JSON
+    const formData = new URLSearchParams();
+    for (const [key, value] of Object.entries(data)) {
+      if (typeof value === "object") {
+        formData.append(key, JSON.stringify(value));
+      } else {
+        formData.append(key, value);
+      }
+    }
+    config.data = formData.toString();
+    config.headers = {
+      "Content-Type": "application/x-www-form-urlencoded",
+    };
   }
 
   const response = await axios(config);
@@ -84,25 +94,28 @@ async function createTranscript(recordingSid, options = {}) {
     }
 
     // Create transcript using Twilio's Conversational Intelligence REST API
+    // Channel is passed as a JSON string in form-urlencoded format
+    const channelData = {
+      media_properties: {
+        source_sid: recordingSid,
+      },
+      participants: [
+        {
+          user_id: options.agentId || "agent",
+          channel_participant: 1,
+          full_name: options.agentName || "Agent",
+        },
+        {
+          user_id: options.customerId || "customer",
+          channel_participant: 2,
+          full_name: options.customerName || "Customer",
+        },
+      ],
+    };
+
     const requestData = {
       ServiceSid: intelligenceConfig.serviceSid,
-      Channel: {
-        MediaProperties: {
-          SourceSid: recordingSid,
-        },
-        Participants: [
-          {
-            UserId: options.agentId || "agent",
-            ChannelParticipant: 1,
-            FullName: options.agentName || "Agent",
-          },
-          {
-            UserId: options.customerId || "customer",
-            ChannelParticipant: 2,
-            FullName: options.customerName || "Customer",
-          },
-        ],
-      },
+      Channel: channelData, // Will be JSON stringified by twilioIntelligenceRequest
     };
 
     const transcript = await twilioIntelligenceRequest("POST", "Transcripts", requestData);
