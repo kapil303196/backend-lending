@@ -313,40 +313,50 @@ async function processRecordingWithTwilioIntelligence(callDoc) {
 /**
  * Handle webhook callback from Twilio Intelligence when transcription is complete
  *
+ * Twilio sends webhooks with snake_case field names:
+ * - account_sid
+ * - service_sid
+ * - transcript_sid
+ * - event_type: "voice_intelligence_transcript_available" or "voice_intelligence_transcript_failed"
+ *
  * @param {Object} webhookData - Webhook payload from Twilio
  * @returns {Promise<Object>} Updated call document
  */
 async function handleTranscriptionWebhook(webhookData) {
   const Call = require("../models/Call");
 
-  const {
-    TranscriptSid,
-    TranscriptStatus,
-    RecordingSid,
-  } = webhookData;
+  // Twilio uses snake_case in webhooks
+  const transcriptSid = webhookData.transcript_sid || webhookData.TranscriptSid;
+  const eventType = webhookData.event_type || webhookData.EventType;
+  const serviceSid = webhookData.service_sid || webhookData.ServiceSid;
 
-  console.log(`Twilio Intelligence webhook: TranscriptSid=${TranscriptSid}, Status=${TranscriptStatus}`);
+  console.log(`Twilio Intelligence webhook: TranscriptSid=${transcriptSid}, EventType=${eventType}`);
 
-  // Find the call by recording SID or transcript SID
-  let callDoc = await Call.findOne({
-    $or: [
-      { recordingSid: RecordingSid },
-      { "twilioTranscript.transcriptSid": TranscriptSid },
-    ],
-  });
-
-  if (!callDoc) {
-    console.warn(`Twilio Intelligence webhook: No call found for TranscriptSid=${TranscriptSid}`);
+  if (!transcriptSid) {
+    console.warn("Twilio Intelligence webhook: Missing transcript_sid");
     return null;
   }
 
-  // Update based on status
-  if (TranscriptStatus === "completed") {
+  // Find the call by transcript SID
+  let callDoc = await Call.findOne({
+    "twilioTranscript.transcriptSid": transcriptSid,
+  });
+
+  if (!callDoc) {
+    console.warn(`Twilio Intelligence webhook: No call found for TranscriptSid=${transcriptSid}`);
+    return null;
+  }
+
+  // Check event type - "voice_intelligence_transcript_available" means completed
+  const isCompleted = eventType === "voice_intelligence_transcript_available";
+  const isFailed = eventType === "voice_intelligence_transcript_failed";
+
+  if (isCompleted) {
     // Fetch the full transcript
-    const transcriptData = await getTranscript(TranscriptSid);
+    const transcriptData = await getTranscript(transcriptSid);
 
     callDoc.twilioTranscript = {
-      transcriptSid: TranscriptSid,
+      transcriptSid: transcriptSid,
       status: "completed",
       completedAt: new Date(),
       duration: transcriptData.duration,
@@ -403,23 +413,27 @@ async function handleTranscriptionWebhook(webhookData) {
         await callDoc.save();
       }
     }
-  } else if (TranscriptStatus === "failed") {
+  } else if (isFailed) {
+    const errorMessage = webhookData.error_message || webhookData.ErrorMessage || "Transcription failed";
+
     callDoc.twilioTranscript = {
-      transcriptSid: TranscriptSid,
+      transcriptSid: transcriptSid,
       status: "failed",
-      error: webhookData.ErrorMessage || "Transcription failed",
+      error: errorMessage,
       completedAt: new Date(),
     };
 
     callDoc.transcription = {
       status: "failed",
-      error: webhookData.ErrorMessage || "Twilio transcription failed",
+      error: errorMessage,
       processedAt: new Date(),
     };
 
     await callDoc.save();
 
     console.log(`Twilio Intelligence: Transcription failed for call ${callDoc.twilioCallSid}`);
+  } else {
+    console.log(`Twilio Intelligence: Unknown event type ${eventType} for call ${callDoc.twilioCallSid}`);
   }
 
   return callDoc;
