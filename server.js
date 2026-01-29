@@ -19,6 +19,7 @@ const pdfRoutes = require("./routes/pdfRoutes");
 const lenderEmailRoutes = require("./routes/lenderEmailRoutes");
 const dummyRoutes = require("./routes/dummyRoutes");
 const unsubscribeRoutes = require("./routes/unsubscribeRoutes");
+const twilioRoutes = require("./routes/twilioRoutes");
 const { auditMiddleware } = require("./middleware/auditMiddleware");
 
 const app = express();
@@ -120,6 +121,7 @@ app.use("/api/pdf", pdfRoutes);
 app.use("/api/lenders", lenderEmailRoutes);
 app.use("/api/dummy", dummyRoutes);
 app.use("/api/unsubscribe", unsubscribeRoutes);
+app.use("/api/twilio", twilioRoutes);
 
 /**
  * @swagger

@@ -19,7 +19,7 @@ const crypto = require('crypto');
 const MONGO_URI = process.env.MONGODB_URI//"mongodb+srv://admin:Kapil%403110.@cluster0.bmbvy.mongodb.net/efilebusiness?retryWrites=true&w=majority";
 const MONGO_DB = process.env.MONGO_DB//"efilebusiness";
 const COLLECTION_NAME = process.env.COLLECTION_NAME//"data";
-const INPUT_CSV = "files/data-21-jan.xlsx";
+const INPUT_CSV = path.resolve(__dirname, "../files/Washington local emails combine.csv");
 console.log(MONGO_URI)
 
 // =====================================================================
@@ -32,6 +32,45 @@ console.log(MONGO_URI)
 // Example: If your CSV has "Phone number" column, map it to "phoneNumber"
 // =====================================================================
 const HEADER_MAPPING = {
+    // ----------------------
+    // Washington local emails combine.csv (explicit column support)
+    // ----------------------
+    'entity id': 'entityId',
+    'entityid': 'entityId',
+    'physical address line 1': 'physicalAddressLine1',
+    'physical address line 2': 'physicalAddressLine2',
+    'physical address line 3': 'physicalAddressLine3',
+    'physical city': 'physicalCity',
+    'physical state': 'physicalState',
+    'physical country': 'physicalCountry',
+    'physical zip5': 'physicalZip5',
+    'physical zip4': 'physicalZip4',
+    'mailing address line 1': 'mailingAddressLine1',
+    'mailing address line 2': 'mailingAddressLine2',
+    'mailing address line 3': 'mailingAddressLine3',
+    // NOTE: the source file header has a double-space: "Mailing  City"
+    'mailing  city': 'mailingCity',
+    'mailing city': 'mailingCity',
+    'mailing state': 'mailingState',
+    'mailing country': 'mailingCountry',
+    'mailing zip5': 'mailingZip5',
+    // NOTE: source file typo: "Mailig Zip4"
+    'mailig zip4': 'mailingZip4',
+    'mailing zip4': 'mailingZip4',
+    'business name': 'businessName',
+    'record status': 'recordStatus',
+    'state of incorporation': 'stateOfIncorporation',
+    'date of incorporation': 'dateOfIncorporation',
+    'expiration date': 'expirationDate',
+    'dissolution date': 'dissolutionDate',
+    'type': 'type',
+    'type description': 'typeDescription',
+    'registered agent name': 'registeredAgentName',
+    'registered agent address': 'registeredAgentAddress',
+    'registered agent city': 'registeredAgentCity',
+    'registered agent state': 'registeredAgentState',
+    'registered agent zip': 'registeredAgentZip',
+
     // Phone fields
     'phone number': 'phoneNumber',
     'phonenumber': 'phoneNumber',
@@ -57,12 +96,14 @@ const HEADER_MAPPING = {
     'last name': 'lastName',
     'lastname': 'lastName',
     'lname': 'lastName',
+    'middle name': 'middleName',
+    'middlename': 'middleName',
+    'mname': 'middleName',
     
     // Company / Business name
     'company': 'company',
     'name': 'company',
-    'business name': 'company',
-    'businessname': 'company',
+    'businessname': 'businessName',
     'company name': 'company',
     'companyname': 'company',
     
@@ -81,12 +122,41 @@ const HEADER_MAPPING = {
     'address': 'address',
     'street': 'address',
     'street address': 'address',
+    'physicaladdressline1': 'address',
+    'mailingaddressline1': 'mailingAddress',
     'city': 'city',
+    'physicalcity': 'city',
+    'mailingcity': 'mailingCity',
     'state': 'state',
+    'physicalstate': 'state',
+    'mailingstate': 'mailingState',
     'zip': 'zip',
     'zipcode': 'zip',
     'zip code': 'zip',
     'postal code': 'zip',
+    'physicalzip5': 'zip',
+    'physicalzip4': 'zip4',
+    'mailingzip5': 'mailingZip',
+    'mailingzip4': 'mailingZip4',
+    'physicalcountry': 'country',
+    'mailingcountry': 'mailingCountry',
+    
+    // Washington State specific fields
+    'ubi': 'ubi',
+    'category': 'category',
+    'stateofincorporation': 'stateOfIncorporation',
+    // Keep legacy support for alternate header formatting without overriding the main mapping above.
+    'recordstatus': 'recordStatus',
+    'dateofincorporation': 'dateOfIncorporation',
+    'expirationdate': 'expirationDate',
+    'dissolutiondate': 'dissolutionDate',
+    'duration': 'duration',
+    'typedescription': 'typeDescription',
+    'registeredagentname': 'registeredAgentName',
+    'registeredagentaddress': 'registeredAgentAddress',
+    'registeredagentcity': 'registeredAgentCity',
+    'registeredagentstate': 'registeredAgentState',
+    'registeredagentzip': 'registeredAgentZip',
     
     // Other fields
     'uniqueid': 'uniqueId',
@@ -111,8 +181,8 @@ const HEADER_MAPPING = {
     'title': 'title',
     'job title': 'title',
     'status': 'status',
-    'url': 'URL',
-    'website': 'URL',
+    'url': 'url',
+    'website': 'url',
 };
 
 // MongoDB document schema - all fields that will be created
@@ -121,6 +191,7 @@ const MONGO_SCHEMA_FIELDS = {
     numbertype: "",
     networktype: "",
     firstName: "",
+    middleName: "",
     lastName: "",
     company: "",
     email: "",
@@ -130,11 +201,53 @@ const MONGO_SCHEMA_FIELDS = {
     city: "",
     state: "",
     zip: "",
+    zip4: "",
+    country: "",
+    // General mailing fields (legacy)
+    mailingAddress: "",
+    mailingCity: "",
+    mailingState: "",
+    mailingZip: "",
+    mailingZip4: "",
+    mailingCountry: "",
+    // Explicit WA columns
+    url: "",
+    entityId: "",
+    physicalAddressLine1: "",
+    physicalAddressLine2: "",
+    physicalAddressLine3: "",
+    physicalCity: "",
+    physicalState: "",
+    physicalCountry: "",
+    physicalZip5: "",
+    physicalZip4: "",
+    mailingAddressLine1: "",
+    mailingAddressLine2: "",
+    mailingAddressLine3: "",
+    mailingZip5: "",
+    businessName: "",
+    recordStatus: "",
     taxId: "",
     birthDate: "",
     dateBusinessStarted: "",
+    dateOfIncorporation: "",
     monthlyRevenue: "",
     uniqueId: "",
+    title: "",
+    status: "",
+    // Washington State specific fields
+    ubi: "",
+    category: "",
+    stateOfIncorporation: "",
+    expirationDate: "",
+    dissolutionDate: "",
+    duration: "",
+    typeDescription: "",
+    registeredAgentName: "",
+    registeredAgentAddress: "",
+    registeredAgentCity: "",
+    registeredAgentState: "",
+    registeredAgentZip: "",
     isActive: true
 };
 
@@ -190,6 +303,13 @@ async function withRetry(fn, label) {
         try {
             return await fn();
         } catch (err) {
+            // Do NOT retry duplicate key errors; we handle duplicates via update/upsert.
+            const code = err?.code ?? err?.errorResponse?.code;
+            if (code === 11000) throw err;
+            // BulkWrite can contain duplicate key writeErrors
+            const writeErrors = err?.writeErrors || err?.result?.writeErrors;
+            if (Array.isArray(writeErrors) && writeErrors.some(e => e?.code === 11000)) throw err;
+
             if (attempt > MAX_RETRIES) {
                 console.error(`❌ ${label} failed after ${MAX_RETRIES} retries:`, err?.message || err);
                 throw err;
@@ -216,38 +336,155 @@ async function run() {
 
     if (filePath.endsWith('.xlsx')) {
         console.log('📖 Detected .xlsx file, using SheetJS...');
-        const workbook = XLSX.readFile(filePath);
+        console.log('📏 File size: ' + (fs.statSync(filePath).size / (1024 * 1024)).toFixed(2) + ' MB');
+        console.log('⚠️  Large file detected, using optimized read options...');
+        
+        // For very large files, read as buffer first for better memory handling
+        console.log('📖 Reading file buffer...');
+        const fileBuffer = fs.readFileSync(filePath);
+        console.log('📖 Parsing workbook from buffer...');
+        
+        // For large files, use minimal options and read only what we need
+        const workbook = XLSX.read(fileBuffer, { 
+            type: 'buffer',
+            cellStyles: false,
+            cellHTML: false,
+            cellFormula: false,
+            cellNF: false,
+            cellDates: true,
+            sheetStubs: false,
+            bookDeps: false,
+            bookFiles: false,
+            bookProps: false,
+            bookVBA: false,
+            dense: false,
+            WTF: false
+        });
+        
+        // Check if workbook has sheets
+        if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+            throw new Error('Excel file has no sheets');
+        }
+        
+        console.log('📋 Available sheets:', workbook.SheetNames);
+        console.log('📦 Sheets object exists:', !!workbook.Sheets);
+        console.log('📦 Sheets object keys:', Object.keys(workbook.Sheets || {}));
+        
         const sheetName = workbook.SheetNames[0];
-        // Use sheet_to_json with defval: "" to ensure empty cells are empty strings, but we still need to normalize keys
-        const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: "" });
-
-        // Helper to check if a row is empty (all values are empty/whitespace)
-        function isRowEmpty(row) {
-            if (!row || typeof row !== 'object' || Object.keys(row).length === 0) return true;
-            const values = Object.values(row);
-            return values.every(val => {
-                if (val === null || val === undefined) return true;
-                if (typeof val === 'string' && val.trim() === '') return true;
-                return false;
-            });
+        console.log(`📄 Attempting to read sheet: "${sheetName}"`);
+        
+        // Try to access the sheet
+        let sheet = workbook.Sheets[sheetName];
+        
+        // If sheet doesn't exist, try iterating over all available keys
+        if (!sheet) {
+            console.log('⚠️  Direct access failed, trying alternative access methods...');
+            
+            // Try case-insensitive lookup
+            const sheetsObj = workbook.Sheets || {};
+            const availableKeys = Object.keys(sheetsObj);
+            console.log('Available sheet keys:', availableKeys);
+            
+            for (const key of availableKeys) {
+                if (key.toLowerCase() === sheetName.toLowerCase()) {
+                    sheet = sheetsObj[key];
+                    console.log(`✅ Found sheet with key: "${key}"`);
+                    break;
+                }
+            }
         }
-
-        // Filter out completely empty rows
-        parser = rawData.filter(row => !isRowEmpty(row));
-
-        // Collect all unique keys from the first row (assuming header row is complete) or scan all
-        // For safety, let's scan the first 100 rows or just use the first row if we trust it.
-        // Better: get headers from the sheet directly
-        const sheet = workbook.Sheets[sheetName];
-        const range = XLSX.utils.decode_range(sheet['!ref']);
-        const headers = [];
-        for (let C = range.s.c; C <= range.e.c; ++C) {
-            const cell = sheet[XLSX.utils.encode_cell({ r: range.s.r, c: C })];
-            if (cell && cell.v) headers.push(cell.v);
+        
+        if (!sheet) {
+            console.error('❌ Sheet not found after all attempts.');
+            console.error('❌ SheetNames:', workbook.SheetNames);
+            console.error('❌ Available Sheets keys:', Object.keys(workbook.Sheets || {}));
+            
+            // Try to re-read the file with different options (no optimizations)
+            console.log('🔄 Attempting to re-read file with default options...');
+            const wb2 = XLSX.read(fileBuffer, { type: 'buffer' });
+            console.log('📋 Re-read SheetNames:', wb2.SheetNames);
+            console.log('📦 Re-read Sheets keys:', Object.keys(wb2.Sheets || {}));
+            
+            // If the re-read worked, use that workbook instead
+            if (wb2.Sheets && Object.keys(wb2.Sheets).length > 0) {
+                console.log('✅ Re-read successful, using this workbook');
+                const retrySheet = wb2.Sheets[sheetName] || wb2.Sheets[Object.keys(wb2.Sheets)[0]];
+                if (retrySheet) {
+                    console.log('✅ Sheet loaded on retry');
+                    // Convert and continue
+                    const rawData = XLSX.utils.sheet_to_json(retrySheet, { defval: "", raw: false });
+                    
+                    function isRowEmpty(row) {
+                        if (!row || typeof row !== 'object' || Object.keys(row).length === 0) return true;
+                        const values = Object.values(row);
+                        return values.every(val => {
+                            if (val === null || val === undefined) return true;
+                            if (typeof val === 'string' && val.trim() === '') return true;
+                            return false;
+                        });
+                    }
+                    
+                    parser = rawData.filter(row => !isRowEmpty(row));
+                    
+                    const range = XLSX.utils.decode_range(retrySheet['!ref']);
+                    const headers = [];
+                    for (let C = range.s.c; C <= range.e.c; ++C) {
+                        const cell = retrySheet[XLSX.utils.encode_cell({ r: range.s.r, c: C })];
+                        if (cell && cell.v) headers.push(cell.v);
+                    }
+                    allHeaders = headers;
+                    
+                    console.log(`✅ Loaded ${parser.length} rows from Excel (retry)`);
+                    console.log('📊 Sample headers:', allHeaders.slice(0, 5));
+                    // Skip the error throw and continue
+                    sheet = retrySheet;
+                }
+            }
+            
+            // Only throw if retry also failed
+            if (!sheet) {
+                throw new Error(`Sheet "${sheetName}" not found in workbook`);
+            }
         }
-        allHeaders = headers;
+        
+        // Check if sheet has data
+        if (!sheet['!ref']) {
+            throw new Error(`Sheet "${sheetName}" appears to be empty (no cell range)`);
+        }
+        
+        // Only process if not already processed by retry
+        if (!parser || parser.length === 0) {
+            console.log('✅ Sheet loaded successfully, converting to JSON...');
+            // Use sheet_to_json with defval: "" to ensure empty cells are empty strings, but we still need to normalize keys
+            const rawData = XLSX.utils.sheet_to_json(sheet, { defval: "", raw: false });
 
-        console.log(`📊 Found ${parser.length} records in Excel file (filtered from ${rawData.length}).`);
+            // Helper to check if a row is empty (all values are empty/whitespace)
+            function isRowEmpty(row) {
+                if (!row || typeof row !== 'object' || Object.keys(row).length === 0) return true;
+                const values = Object.values(row);
+                return values.every(val => {
+                    if (val === null || val === undefined) return true;
+                    if (typeof val === 'string' && val.trim() === '') return true;
+                    return false;
+                });
+            }
+
+            // Filter out completely empty rows
+            parser = rawData.filter(row => !isRowEmpty(row));
+
+            // Collect all unique keys from the first row (assuming header row is complete) or scan all
+            // For safety, let's scan the first 100 rows or just use the first row if we trust it.
+            // Better: get headers from the sheet directly
+            const range = XLSX.utils.decode_range(sheet['!ref']);
+            const headers = [];
+            for (let C = range.s.c; C <= range.e.c; ++C) {
+                const cell = sheet[XLSX.utils.encode_cell({ r: range.s.r, c: C })];
+                if (cell && cell.v) headers.push(cell.v);
+            }
+            allHeaders = headers;
+
+            console.log(`📊 Found ${parser.length} records in Excel file (filtered from ${rawData.length}).`);
+        }
         console.log(`🔑 Detected ${allHeaders.length} columns.`);
     } else {
         console.log('📖 Detected CSV file, extracting headers...');
@@ -330,7 +567,8 @@ async function run() {
 
     let currentIndex = 0;   // absolute row index
     let processed = 0;      // rows processed since resume
-    let inserted = 0;       // rows inserted
+    let upserted = 0;       // new docs created
+    let modified = 0;       // existing docs updated
     let skipped = 0;        // rows skipped (empty)
     let inFlight = 0;       // running batch jobs
     let ended = false;
@@ -356,7 +594,7 @@ async function run() {
         const etaSec = fileSize && rps > 0 ? Math.max(0, ((fileSize - bytesRead) / (bytesRead / Math.max(1, processed))) / rps) : 0;
 
         process.stdout.write(
-            `\r⏱️ ${rps.toFixed(0)} rows/s | 📦 in-flight ${inFlight}/${CONCURRENCY} | ✅ inserted ${inserted} | 🧮 processed ${processed} | ⏭️  skipped ${skipped} | 📊 ${pct}% | ⏳ ETA ~${Math.round(etaSec)}s   `
+            `\r⏱️ ${rps.toFixed(0)} rows/s | 📦 in-flight ${inFlight}/${CONCURRENCY} | 🆕 upserted ${upserted} | 🔁 updated ${modified} | 🧮 processed ${processed} | ⏭️  skipped ${skipped} | 📊 ${pct}% | ⏳ ETA ~${Math.round(etaSec)}s   `
         );
 
         lastTick = now;
@@ -494,30 +732,64 @@ async function run() {
 
         // Generate uniqueId if missing
         if (!newRecord.uniqueId || newRecord.uniqueId === "") {
-            newRecord.uniqueId = crypto.randomBytes(4).toString('hex').toUpperCase(); // 8 chars hex
+            // Use UBI as uniqueId if available (Washington State businesses)
+            if (newRecord.ubi && newRecord.ubi !== "") {
+                newRecord.uniqueId = newRecord.ubi;
+            } else if (newRecord.entityId && newRecord.entityId !== "") {
+                newRecord.uniqueId = String(newRecord.entityId).trim();
+            } else {
+                newRecord.uniqueId = crypto.randomBytes(4).toString('hex').toUpperCase(); // 8 chars hex
+            }
+        }
+
+        // If UBI missing but Entity ID present (your WA file uses "Entity ID"), keep both aligned
+        if ((!newRecord.ubi || newRecord.ubi === "") && newRecord.entityId && newRecord.entityId !== "") {
+            newRecord.ubi = String(newRecord.entityId).trim();
+        }
+
+        // Derive isActive from Record Status when present
+        if (newRecord.recordStatus && typeof newRecord.recordStatus === 'string') {
+            newRecord.isActive = newRecord.recordStatus.trim().toLowerCase() === 'active';
+        } else if (newRecord.status && typeof newRecord.status === 'string') {
+            // fallback to legacy "status" field
+            newRecord.isActive = newRecord.status.trim().toLowerCase() === 'active';
         }
 
         return newRecord;
     }
 
     async function scheduleBatchInsert(rows, endIndexExclusive, collection) {
-        const docs = rows.map(r => ({ ...transformRecord(r), createdAt: new Date(), updatedAt: new Date() }));
+        // NOTE: We update existing docs by uniqueId (no new doc for duplicates).
+        // Upsert=true keeps the import idempotent (creates doc if not present).
+        const now = new Date();
+        const docs = rows.map(r => ({ ...transformRecord(r), updatedAt: now }));
 
         const job = limit(async () => {
             inFlight++;
             try {
                 const res = await withRetry(
                     () => collection.bulkWrite(
-                        docs.map(d => ({ insertOne: { document: d } })),
+                        docs.map(d => ({
+                            updateOne: {
+                                filter: { uniqueId: d.uniqueId },
+                                update: {
+                                    $set: d,
+                                    $setOnInsert: { createdAt: now }
+                                },
+                                upsert: true
+                            }
+                        })),
                         { ordered: false, bypassDocumentValidation: true /* fastest inserts */ }
                     ),
                     `bulkWrite(${docs.length})`
                 );
-                inserted += res.insertedCount || docs.length; // fallback to docs.length for older drivers
+                upserted += res.upsertedCount || 0;
+                // modifiedCount doesn't include upserts; it's only existing docs changed
+                modified += res.modifiedCount || 0;
                 saveCheckpointThrottled(endIndexExclusive);
 
                 // Old-style progress line (like your previous logs)
-                console.log(`\n🚚 Inserted ${docs.length} records. Total processed: ${processed} (Current index: ${endIndexExclusive})`);
+                console.log(`\n🚚 Upserted ${res.upsertedCount || 0} | Updated ${res.modifiedCount || 0} records. Total processed: ${processed} (Current index: ${endIndexExclusive})`);
             } finally {
                 inFlight--;
                 maybeResume();
@@ -616,7 +888,8 @@ async function run() {
   DB:   ${MONGO_DB}.${COLLECTION_NAME}
   BATCH_SIZE: ${BATCH_SIZE}, CONCURRENCY: ${CONCURRENCY}, MAX_INFLIGHT: ${MAX_INFLIGHT}
   Total processed: ${processed}
-  Total inserted:  ${inserted}
+  Total upserted:  ${upserted}
+  Total updated:   ${modified}
   Total skipped:   ${skipped}
   Final index:     ${currentIndex}
   Completed OK:    ${!hadError && ended}

@@ -17,10 +17,24 @@ const MONGO_URI = process.env.MONGODB_URI;
 const MONGO_DB = process.env.MONGO_DB;
 const COLLECTION_NAME = process.env.COLLECTION_NAME;
 
+// ---------------------- Main query (global) ----------------------
+// Keep this at the top so it's easy to change in one place.
+const MAIN_QUERY = {
+    createdAt: { $gte: new Date('2026-01-28T00:00:00.000Z') },
+    company: { $exists: true, $type: 'string', $ne: '' },
+};
+
 // Bulk operation settings
-const BATCH_SIZE = 1000;  // Number of updates per bulk write
+// Separate read vs write batch sizes to maximize throughput.
+const READ_BATCH_SIZE = 5000;   // Cursor batch size (docs fetched per round-trip)
+const WRITE_BATCH_SIZE = 1000;  // Number of updates per bulkWrite
+// Parallel bulk writes (like import.js)
+const MAX_INFLIGHT_BULKS = 10;  // how many bulkWrite batches can run at once
 const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 500;
+
+// Only fetch what we need.
+const PROJECTION = { uniqueId: 1, company: 1 };
 
 console.log('MongoDB URI:', MONGO_URI ? 'Configured' : 'NOT CONFIGURED');
 console.log('Database:', MONGO_DB);
@@ -52,9 +66,22 @@ async function withRetry(fn, label) {
  */
 function formatCompanyName(name) {
     if (!name || typeof name !== 'string') return name;
+
+    // Sanitize: remove quotes, commas, and other special characters.
+    // Keep letters/numbers/spaces/hyphens, collapse whitespace.
+    let sanitized = name
+        .normalize('NFKD')
+        // Remove common quote characters (straight + smart quotes)
+        .replace(/["“”‘’]/g, '')
+        // Remove commas explicitly (common in "Company, LLC" patterns)
+        .replace(/,/g, '')
+        // Remove any remaining special characters (keep letters/numbers/spaces/hyphens)
+        .replace(/[^A-Za-z0-9\s-]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
     
     // Split the name into words
-    const words = name.trim().split(/\s+/);
+    const words = sanitized.split(/\s+/);
     
     // Process each word
     const formattedWords = words.map(word => {
@@ -92,7 +119,7 @@ async function run() {
         const collection = db.collection(COLLECTION_NAME);
 
         // Get total count for progress tracking
-        const totalDocs = await collection.countDocuments({createdAt: { $gte: new Date('2026-01-20T00:00:00.000Z') }});
+        const totalDocs = await collection.countDocuments(MAIN_QUERY);
         console.log(`📊 Found ${totalDocs} documents with company field`);
 
         if (totalDocs === 0) {
@@ -101,16 +128,47 @@ async function run() {
         }
 
         // Use cursor to iterate through documents
-        const cursor = collection.find(
-            {createdAt: { $gte: new Date('2026-01-20T00:00:00.000Z') }}
-            // { company: { $exists: true, $ne: '' } },
-            // { projection: { uniqueId: 1, company: 1 } }
-        ).batchSize(BATCH_SIZE);
+        const cursor = collection
+            .find(MAIN_QUERY, { projection: PROJECTION })
+            .batchSize(READ_BATCH_SIZE);
 
         let bulkOps = [];
         let lastProgressTime = Date.now();
+        const inFlight = new Set(); // track running bulkWrite promises
 
         console.log('\n🚀 Starting company name updates...\n');
+
+        async function scheduleBulkWrite(ops) {
+            if (!ops || ops.length === 0) return;
+
+            // Backpressure: don't let in-flight bulks grow without bound
+            while (inFlight.size >= MAX_INFLIGHT_BULKS) {
+                await Promise.race(Array.from(inFlight));
+            }
+
+            const startedAt = Date.now();
+            const job = (async () => {
+                try {
+                    const result = await withRetry(
+                        () => collection.bulkWrite(ops, { ordered: false }),
+                        `bulkWrite(${ops.length})`
+                    );
+                    totalUpdated += result.modifiedCount || 0;
+
+                    const pct = ((totalProcessed / totalDocs) * 100).toFixed(1);
+                    console.log(
+                        `📦 Batch complete: ${ops.length} ops | Modified: ${result.modifiedCount || 0} | In-flight: ${inFlight.size}/${MAX_INFLIGHT_BULKS} | Progress: ${totalProcessed}/${totalDocs} (${pct}%) | ${(Date.now() - startedAt)}ms`
+                    );
+                } catch (err) {
+                    totalErrors++;
+                    console.error(`\n❌ Batch failed (${ops.length} ops):`, err?.message || err);
+                    throw err;
+                }
+            })();
+
+            inFlight.add(job);
+            job.finally(() => inFlight.delete(job));
+        }
 
         for await (const doc of cursor) {
             totalProcessed++;
@@ -136,35 +194,31 @@ async function run() {
             }
 
             // Execute bulk operation when batch is full
-            if (bulkOps.length >= BATCH_SIZE) {
-                const result = await withRetry(
-                    () => collection.bulkWrite(bulkOps, { ordered: false }),
-                    `bulkWrite(${bulkOps.length})`
-                );
-                totalUpdated += result.modifiedCount || 0;
-                
-                console.log(`📦 Batch complete: ${bulkOps.length} ops | Modified: ${result.modifiedCount} | Progress: ${totalProcessed}/${totalDocs} (${((totalProcessed / totalDocs) * 100).toFixed(1)}%)`);
-                
+            if (bulkOps.length >= WRITE_BATCH_SIZE) {
+                const opsToWrite = bulkOps;
                 bulkOps = [];
+                // Fire-and-forget (bounded by MAX_INFLIGHT_BULKS); we'll await drain later.
+                scheduleBulkWrite(opsToWrite).catch(() => {});
             }
 
             // Progress update every 5 seconds
             const now = Date.now();
             if (now - lastProgressTime > 5000) {
                 const pct = ((totalProcessed / totalDocs) * 100).toFixed(1);
-                process.stdout.write(`\r⏱️  Processed: ${totalProcessed}/${totalDocs} (${pct}%) | Updated: ${totalUpdated} | Skipped: ${totalSkipped}   `);
+                process.stdout.write(`\r⏱️  Processed: ${totalProcessed}/${totalDocs} (${pct}%) | Updated: ${totalUpdated} | Skipped: ${totalSkipped} | In-flight: ${inFlight.size}/${MAX_INFLIGHT_BULKS}   `);
                 lastProgressTime = now;
             }
         }
 
         // Process remaining bulk operations
         if (bulkOps.length > 0) {
-            const result = await withRetry(
-                () => collection.bulkWrite(bulkOps, { ordered: false }),
-                `bulkWrite(${bulkOps.length})`
-            );
-            totalUpdated += result.modifiedCount || 0;
-            console.log(`\n📦 Final batch: ${bulkOps.length} ops | Modified: ${result.modifiedCount}`);
+            await scheduleBulkWrite(bulkOps);
+            bulkOps = [];
+        }
+
+        // Drain all in-flight bulk writes
+        if (inFlight.size > 0) {
+            await Promise.allSettled(Array.from(inFlight));
         }
 
         console.log(`\n
@@ -178,6 +232,7 @@ async function run() {
 ║  Total Updated:   ${String(totalUpdated).padEnd(30)}  ║
 ║  Total Skipped:   ${String(totalSkipped).padEnd(30)}  ║
 ║  (no change needed)                                 ║
+║  Total Errors:    ${String(totalErrors).padEnd(30)}  ║
 ╚════════════════════════════════════════════════════╝
 `);
 
@@ -202,6 +257,8 @@ function testFormatter() {
         { input: 'simple company', expected: 'Simple Company' },
         { input: 'LLC only', expected: 'LLC Only' },
         { input: 'already Correct LLC', expected: 'Already Correct LLC' },
+        { input: '"Green Acres Custom Ag," LLC"', expected: 'Green Acres Custom Ag LLC' },
+        { input: 'Green Acres Custom Ag, LLC', expected: 'Green Acres Custom Ag LLC' },
     ];
 
     console.log('\n🧪 Testing company name formatter:\n');

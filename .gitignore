@@ -52,3 +52,11 @@ tmp/
 temp/
 *.tmp
 
+# Data files (large imports / exports)
+# Ignore CSV / spreadsheet data so they never hit GitHub's 100MB limit
+files/*.csv
+files/*.tsv
+files/*.xlsx
+files/*.xls# Fallback: any CSV/TSV anywhere in this repo
+*.csv
+*.tsv
