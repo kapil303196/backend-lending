@@ -60,6 +60,24 @@ const callSchema = new mongoose.Schema(
       },
       processedAt: Date,
       error: String,
+      source: {
+        type: String,
+        enum: ["openai-whisper", "twilio-intelligence", "twilio-record"],
+        default: "openai-whisper",
+      },
+    },
+
+    // Twilio Intelligence transcript info
+    twilioTranscript: {
+      transcriptSid: String,
+      status: {
+        type: String,
+        enum: ["pending", "processing", "completed", "failed"],
+      },
+      requestedAt: Date,
+      completedAt: Date,
+      duration: Number,
+      error: String,
     },
     summary: {
       text: String,

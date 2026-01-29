@@ -26,6 +26,12 @@ const {
   transcribeCall,
   getCallById,
   cleanupStaleCalls,
+  syncCallDuration,
+  // Twilio Intelligence endpoints
+  handleIntelligenceWebhook,
+  transcribeWithTwilioIntelligence,
+  getTwilioTranscript,
+  getIntelligenceStatus,
 } = require("../controllers/twilioController");
 const { authenticate, requireAdmin } = require("../middleware/auth");
 const { validateTwilioSignature } = require("../middleware/twilioValidation");
@@ -98,6 +104,14 @@ router.post(
   handleVoicemail
 );
 
+// Twilio Intelligence webhook (transcription status callback)
+// Note: This is called by Twilio Conversational Intelligence when transcription completes
+router.post(
+  "/intelligence/transcript-status",
+  express.urlencoded({ extended: false }),
+  handleIntelligenceWebhook
+);
+
 /**
  * ============================================================================
  * ADMIN API ENDPOINTS (Protected, requires admin authentication)
@@ -116,8 +130,14 @@ router.get("/calls/:callId", authenticate, requireAdmin, getCallById);
 // Get call recording (proxied through server to avoid Twilio auth prompts)
 router.get("/calls/:callId/recording", authenticate, requireAdmin, getCallRecording);
 
-// Manually trigger transcription and summary
+// Manually trigger transcription and summary (using OpenAI Whisper)
 router.post("/calls/:callId/transcribe", authenticate, requireAdmin, transcribeCall);
+
+// Manually trigger transcription using Twilio Intelligence
+router.post("/calls/:callId/transcribe-twilio", authenticate, requireAdmin, transcribeWithTwilioIntelligence);
+
+// Get call transcript (works with both OpenAI and Twilio Intelligence)
+router.get("/calls/:callId/transcript", authenticate, requireAdmin, getTwilioTranscript);
 
 // Cleanup stale calls (mark old in-progress calls as failed)
 router.post("/calls/cleanup", authenticate, requireAdmin, cleanupStaleCalls);
@@ -150,5 +170,11 @@ router.get(
   requireAdmin,
   listTwilioCallerIds
 );
+
+// Twilio Intelligence configuration status
+router.get("/intelligence/status", authenticate, requireAdmin, getIntelligenceStatus);
+
+// Sync call duration from recording (for fixing duration mismatches)
+router.post("/calls/:callId/sync-duration", authenticate, requireAdmin, syncCallDuration);
 
 module.exports = router;

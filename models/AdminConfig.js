@@ -92,6 +92,21 @@ const adminConfigSchema = new mongoose.Schema(
       model: { type: String, default: "gpt-4o-mini" }, // Model for summarization
       transcriptionModel: { type: String, default: "whisper-1" }, // Whisper model
     },
+
+    // Twilio Intelligence (Conversational Intelligence) for transcription
+    // This is an alternative to OpenAI Whisper transcription
+    // Benefits: No audio download, no API costs for transcription, supports longer calls
+    twilioIntelligence: {
+      enabled: { type: Boolean, default: false },
+      // Intelligence Service SID - create in Twilio Console > Conversational Intelligence
+      serviceSid: { type: String, default: "" },
+      // Automatically transcribe all recordings using Twilio Intelligence
+      autoTranscribe: { type: Boolean, default: true },
+      // Default language for transcription
+      language: { type: String, default: "en-US" },
+      // Webhook URL for transcription status callbacks (auto-configured)
+      webhookUrl: { type: String, default: "" },
+    },
   },
   { timestamps: true }
 );

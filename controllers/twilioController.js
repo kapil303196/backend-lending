@@ -506,13 +506,33 @@ exports.handleCallStatus = async (req, res) => {
         });
       }
     } else {
-      // Create new call record only if it doesn't exist
-      // This handles inbound calls that don't go through outbound-bridge
-      console.log(`Creating new call record for ${callSid}`);
+      // No existing record found for this CallSid
+      // Only create new records for INBOUND calls (direction contains "inbound")
+      // DO NOT create records for outbound-dial (child calls) - these should update parent
+      const isInboundCall = direction?.toLowerCase().includes("inbound");
+      const isOutboundDial = direction?.toLowerCase() === "outbound-dial";
+
+      if (isOutboundDial) {
+        // This is a child call (Twilio -> Customer) that somehow didn't have a parent
+        // This can happen if the call was very short or there was a race condition
+        // Log it but don't create a separate record to avoid duplicates
+        console.log(`Skipping orphan child call ${callSid} (Direction: ${direction}) - no parent found`);
+        return res.status(200).send("OK");
+      }
+
+      if (!isInboundCall) {
+        // Not inbound, not outbound-dial - might be some other outbound call type
+        // Skip to avoid creating duplicate records for web dialer calls
+        console.log(`Skipping unknown call type ${callSid} (Direction: ${direction}) - not creating record`);
+        return res.status(200).send("OK");
+      }
+
+      // This is an inbound call - create a new record
+      console.log(`Creating new call record for inbound call ${callSid}`);
 
       const newCallData = {
         twilioCallSid: callSid,
-        direction: callDirection,
+        direction: "inbound",
         fromNumber: normalizedFrom || fromNumber || "unknown",
         toNumber: normalizedTo || toNumber || "unknown",
         status: callStatus,
@@ -553,6 +573,10 @@ exports.handleCallStatus = async (req, res) => {
  * Handle recording status updates
  * POST /api/twilio/recording-status
  * Called by Twilio when recording is ready
+ *
+ * IMPORTANT: For Voice SDK calls with <Dial record="record-from-answer-dual">,
+ * the recording is associated with the PARENT call SID (the Voice SDK connection).
+ * The RecordingDuration is the actual talk time and should update durationSeconds.
  */
 exports.handleRecordingStatus = async (req, res) => {
   try {
@@ -561,6 +585,8 @@ exports.handleRecordingStatus = async (req, res) => {
     const recordingUrl = req.body?.RecordingUrl;
     const recordingDuration = req.body?.RecordingDuration;
     const recordingStatus = req.body?.RecordingStatus;
+
+    console.log(`Recording status webhook: CallSid=${callSid}, Status=${recordingStatus}, Duration=${recordingDuration}s, URL=${recordingUrl ? 'present' : 'missing'}`);
 
     if (!callSid) {
       console.warn("Recording status webhook missing CallSid");
@@ -581,48 +607,69 @@ exports.handleRecordingStatus = async (req, res) => {
       return res.status(200).send("OK");
     }
 
+    // Parse the recording duration - this is the actual call talk time
+    const durationSecs = recordingDuration && !isNaN(Number(recordingDuration))
+      ? Math.floor(Number(recordingDuration))
+      : null;
+
     const updateData = {
       recordingSid: recordingSid || null,
       recordingUrl: recordingUrl,
-      metadata: {
-        recordingStatusWebhook: {
-          CallSid: callSid,
-          RecordingSid: recordingSid,
-          RecordingUrl: recordingUrl,
-          RecordingDuration: recordingDuration,
-          RecordingStatus: recordingStatus,
-        },
-      },
     };
 
-    if (
-      recordingDuration &&
-      !isNaN(Number(recordingDuration)) &&
-      Number(recordingDuration) >= 0
-    ) {
-      updateData.recordingDurationSeconds = Math.floor(
-        Number(recordingDuration)
-      );
+    // IMPORTANT: Recording duration IS the call duration for recorded calls
+    // This is more accurate than the status callback duration
+    if (durationSecs !== null && durationSecs >= 0) {
+      updateData.recordingDurationSeconds = durationSecs;
+      updateData.durationSeconds = durationSecs; // Also update main duration field
     }
 
-    // Try to find the call record - it might be under the parent call SID for Voice SDK calls
-    let updatedCall = await Call.findOneAndUpdate(
-      { twilioCallSid: callSid },
-      { $set: updateData },
-      { new: true, upsert: false }
-    );
+    // Try to find the call record by CallSid first
+    let callDoc = await Call.findOne({ twilioCallSid: callSid });
 
     // If not found, check if this callSid is stored as a child call in metadata
-    if (!updatedCall) {
-      // Try to find by child call SID in metadata
-      updatedCall = await Call.findOneAndUpdate(
-        { "metadata.childCallStatus.childCallSid": callSid },
-        { $set: updateData },
-        { new: true, upsert: false }
-      );
-      if (updatedCall) {
-        console.log(`Recording attached to parent call via child SID lookup: ${updatedCall.twilioCallSid}`);
+    if (!callDoc) {
+      callDoc = await Call.findOne({ "metadata.childCallStatus.childCallSid": callSid });
+      if (callDoc) {
+        console.log(`Recording: found parent call ${callDoc.twilioCallSid} via child SID ${callSid}`);
       }
+    }
+
+    // Update the call record if found
+    let updatedCall = null;
+    if (callDoc) {
+      // Update fields
+      callDoc.recordingSid = updateData.recordingSid;
+      callDoc.recordingUrl = updateData.recordingUrl;
+
+      if (updateData.recordingDurationSeconds !== undefined) {
+        callDoc.recordingDurationSeconds = updateData.recordingDurationSeconds;
+      }
+
+      // IMPORTANT: Update durationSeconds from recording if it's longer than current
+      // Recording duration is the most accurate measure of actual talk time
+      if (updateData.durationSeconds !== undefined) {
+        if (!callDoc.durationSeconds || updateData.durationSeconds > callDoc.durationSeconds) {
+          callDoc.durationSeconds = updateData.durationSeconds;
+          console.log(`Updated call ${callDoc.twilioCallSid} duration to ${updateData.durationSeconds}s from recording`);
+        }
+      }
+
+      // Merge metadata (don't overwrite existing metadata)
+      callDoc.metadata = callDoc.metadata || {};
+      callDoc.metadata.recordingStatusWebhook = {
+        CallSid: callSid,
+        RecordingSid: recordingSid,
+        RecordingUrl: recordingUrl,
+        RecordingDuration: recordingDuration,
+        RecordingStatus: recordingStatus,
+      };
+
+      await callDoc.save();
+      updatedCall = callDoc;
+      console.log(`Recording attached to call ${callDoc.twilioCallSid}, duration: ${callDoc.durationSeconds}s`);
+    } else {
+      console.log(`Recording webhook: No call record found for CallSid ${callSid}`);
     }
 
     // If call record exists and recording is ready, trigger transcription/summary processing
@@ -632,12 +679,31 @@ exports.handleRecordingStatus = async (req, res) => {
         updatedCall.status?.toLowerCase()
       );
 
-      if (isCallCompleted && updatedCall.recordingUrl) {
-        // Process transcription and summary asynchronously (don't block webhook response)
-        processCallRecording(updatedCall).catch((error) => {
-          console.error("Background transcription/summary processing error:", error);
-          // Error is already logged in processCallRecording, just catch to prevent unhandled rejection
-        });
+      if (isCallCompleted && updatedCall.recordingUrl && updatedCall.recordingSid) {
+        // Check if Twilio Intelligence is enabled - prefer it over OpenAI Whisper
+        const adminConfig = await AdminConfig.findOne({ configId: "default" });
+        const useTwilioIntelligence = adminConfig?.twilioIntelligence?.enabled &&
+                                       adminConfig?.twilioIntelligence?.autoTranscribe &&
+                                       adminConfig?.twilioIntelligence?.serviceSid;
+
+        if (useTwilioIntelligence) {
+          // Use Twilio Intelligence for transcription (no audio download needed!)
+          const { processRecordingWithTwilioIntelligence } = require("../services/twilioIntelligenceService");
+          processRecordingWithTwilioIntelligence(updatedCall).catch((error) => {
+            console.error("Twilio Intelligence transcription error:", error);
+            // Fall back to OpenAI if Twilio Intelligence fails
+            processCallRecording(updatedCall).catch((fallbackError) => {
+              console.error("Fallback OpenAI transcription error:", fallbackError);
+            });
+          });
+          console.log(`Using Twilio Intelligence for transcription of call ${updatedCall.twilioCallSid}`);
+        } else {
+          // Fall back to OpenAI Whisper transcription
+          processCallRecording(updatedCall).catch((error) => {
+            console.error("Background transcription/summary processing error:", error);
+          });
+          console.log(`Using OpenAI Whisper for transcription of call ${updatedCall.twilioCallSid}`);
+        }
       }
     }
 
@@ -2645,6 +2711,66 @@ exports.cleanupStaleCalls = async (req, res) => {
 };
 
 /**
+ * Sync call duration from recording duration
+ * POST /api/twilio/calls/:callId/sync-duration
+ * Updates durationSeconds from recordingDurationSeconds for calls where they don't match
+ */
+exports.syncCallDuration = async (req, res) => {
+  try {
+    const { callId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(callId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid call ID format",
+      });
+    }
+
+    const call = await Call.findById(callId);
+
+    if (!call) {
+      return res.status(404).json({
+        success: false,
+        message: "Call not found",
+      });
+    }
+
+    // Check if recording duration exists and is different from call duration
+    if (call.recordingDurationSeconds && call.recordingDurationSeconds > 0) {
+      const oldDuration = call.durationSeconds || 0;
+      call.durationSeconds = call.recordingDurationSeconds;
+      await call.save();
+
+      return res.json({
+        success: true,
+        message: `Duration updated from ${oldDuration}s to ${call.durationSeconds}s`,
+        data: {
+          oldDuration,
+          newDuration: call.durationSeconds,
+          recordingDuration: call.recordingDurationSeconds,
+        },
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: "No recording duration available to sync",
+      data: {
+        currentDuration: call.durationSeconds,
+        recordingDuration: call.recordingDurationSeconds,
+      },
+    });
+  } catch (error) {
+    console.error("Sync call duration error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error syncing call duration",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
+
+/**
  * Handle voicemail webhook
  * POST /api/twilio/voicemail
  * Called when a voicemail is left
@@ -2767,5 +2893,223 @@ exports.voicemailGreeting = async (req, res) => {
     );
     errorTwiml.hangup();
     res.type("text/xml").status(200).send(errorTwiml.toString());
+  }
+};
+
+/**
+ * ============================================================================
+ * TWILIO INTELLIGENCE ENDPOINTS
+ * ============================================================================
+ */
+
+const {
+  handleTranscriptionWebhook,
+  processRecordingWithTwilioIntelligence,
+  getTranscript,
+  checkConfiguration: checkIntelligenceConfig,
+} = require("../services/twilioIntelligenceService");
+
+/**
+ * Handle Twilio Intelligence transcription webhook
+ * POST /api/twilio/intelligence/transcript-status
+ * Called by Twilio when transcription status changes
+ */
+exports.handleIntelligenceWebhook = async (req, res) => {
+  try {
+    console.log("Twilio Intelligence webhook received:", JSON.stringify(req.body, null, 2));
+
+    const result = await handleTranscriptionWebhook(req.body);
+
+    if (result) {
+      console.log(`Intelligence webhook processed for call: ${result.twilioCallSid}`);
+    }
+
+    res.status(200).send("OK");
+  } catch (error) {
+    console.error("Twilio Intelligence webhook error:", error);
+    // Always return 200 to prevent retries
+    res.status(200).send("OK");
+  }
+};
+
+/**
+ * Trigger Twilio Intelligence transcription for a call
+ * POST /api/twilio/calls/:callId/transcribe-twilio
+ * Uses Twilio Intelligence instead of OpenAI Whisper
+ */
+exports.transcribeWithTwilioIntelligence = async (req, res) => {
+  try {
+    const { callId } = req.params;
+
+    // Validate ObjectId
+    if (!mongoose.Types.ObjectId.isValid(callId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid call ID format",
+      });
+    }
+
+    const call = await Call.findById(callId);
+    if (!call) {
+      return res.status(404).json({
+        success: false,
+        message: "Call not found",
+      });
+    }
+
+    if (!call.recordingSid) {
+      return res.status(400).json({
+        success: false,
+        message: "No recording available for this call. Cannot transcribe.",
+      });
+    }
+
+    // Check if already transcribed with Twilio Intelligence
+    if (call.twilioTranscript?.status === "completed") {
+      return res.status(200).json({
+        success: true,
+        message: "Call already transcribed with Twilio Intelligence",
+        transcription: call.transcription?.text,
+        transcriptSid: call.twilioTranscript.transcriptSid,
+      });
+    }
+
+    // Check if transcription is already in progress
+    if (call.twilioTranscript?.status === "processing") {
+      return res.status(200).json({
+        success: true,
+        message: "Transcription already in progress",
+        transcriptSid: call.twilioTranscript.transcriptSid,
+      });
+    }
+
+    // Trigger transcription
+    const result = await processRecordingWithTwilioIntelligence(call);
+
+    if (result.success) {
+      res.json({
+        success: true,
+        message: "Transcription initiated with Twilio Intelligence",
+        transcriptSid: result.transcriptSid,
+        status: result.status,
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        message: result.error,
+      });
+    }
+  } catch (error) {
+    console.error("Twilio Intelligence transcription error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Failed to start transcription",
+    });
+  }
+};
+
+/**
+ * Get Twilio Intelligence transcript for a call
+ * GET /api/twilio/calls/:callId/transcript
+ */
+exports.getTwilioTranscript = async (req, res) => {
+  try {
+    const { callId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(callId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid call ID format",
+      });
+    }
+
+    const call = await Call.findById(callId);
+    if (!call) {
+      return res.status(404).json({
+        success: false,
+        message: "Call not found",
+      });
+    }
+
+    // If no Twilio transcript, return standard transcription
+    if (!call.twilioTranscript?.transcriptSid) {
+      return res.json({
+        success: true,
+        source: call.transcription?.source || "openai-whisper",
+        status: call.transcription?.status || "pending",
+        text: call.transcription?.text || null,
+        sentences: null,
+      });
+    }
+
+    // Fetch latest from Twilio if still processing
+    if (call.twilioTranscript.status === "processing") {
+      try {
+        const transcriptData = await getTranscript(call.twilioTranscript.transcriptSid);
+
+        // Update local record if completed
+        if (transcriptData.status === "completed") {
+          call.twilioTranscript.status = "completed";
+          call.twilioTranscript.completedAt = new Date();
+          call.transcription = {
+            text: transcriptData.fullText,
+            status: "completed",
+            processedAt: new Date(),
+            source: "twilio-intelligence",
+          };
+          call.metadata = call.metadata || {};
+          call.metadata.twilioTranscriptSentences = transcriptData.sentences;
+          await call.save();
+        }
+
+        return res.json({
+          success: true,
+          source: "twilio-intelligence",
+          status: transcriptData.status,
+          text: transcriptData.fullText,
+          sentences: transcriptData.sentences,
+          duration: transcriptData.duration,
+          transcriptSid: call.twilioTranscript.transcriptSid,
+        });
+      } catch (fetchError) {
+        console.error("Error fetching transcript:", fetchError);
+      }
+    }
+
+    // Return cached data
+    return res.json({
+      success: true,
+      source: "twilio-intelligence",
+      status: call.twilioTranscript.status,
+      text: call.transcription?.text || null,
+      sentences: call.metadata?.twilioTranscriptSentences || null,
+      transcriptSid: call.twilioTranscript.transcriptSid,
+    });
+  } catch (error) {
+    console.error("Get transcript error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Failed to get transcript",
+    });
+  }
+};
+
+/**
+ * Check Twilio Intelligence configuration status
+ * GET /api/twilio/intelligence/status
+ */
+exports.getIntelligenceStatus = async (req, res) => {
+  try {
+    const status = await checkIntelligenceConfig();
+    res.json({
+      success: true,
+      ...status,
+    });
+  } catch (error) {
+    console.error("Intelligence status check error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Failed to check Intelligence status",
+    });
   }
 };
