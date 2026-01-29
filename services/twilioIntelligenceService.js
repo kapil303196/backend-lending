@@ -10,13 +10,14 @@
  * - Multilingual support
  * - Can integrate with Twilio's Language Operators for sentiment analysis
  *
- * IMPORTANT: Channel Mapping for Voice SDK (Web Dialer)
+ * VERIFIED Channel Mapping for Voice SDK (Web Dialer)
  * For dual-channel recordings with <Dial record="record-from-answer-dual"> via Voice SDK:
- * - Channel 1 = PSTN/Remote party (Customer being called/calling)
- * - Channel 2 = WebRTC/Local party (Agent using browser dialer)
+ * - Channel 1 = WebRTC/Browser (Agent making the call from browser)
+ * - Channel 2 = PSTN/Phone (Customer being called)
  *
- * This is counter-intuitive because you might expect Channel 1 to be the "caller",
- * but Twilio routes WebRTC audio (agent) to Channel 2 and PSTN audio (customer) to Channel 1.
+ * This was verified through actual transcription testing where:
+ * - Agent speech (browser user) consistently appeared on Channel 1
+ * - Customer speech (phone recipient) consistently appeared on Channel 2
  *
  * NOTE: Twilio Conversational Intelligence API requires direct REST API calls
  * as it's not available in the standard twilio npm package.
@@ -105,17 +106,13 @@ async function createTranscript(recordingSid, options = {}) {
     // Channel is passed as a JSON string in form-urlencoded format
     //
     // IMPORTANT: For dual-channel recordings with Voice SDK (web dialer):
-    // The channel mapping depends on how Twilio routes the audio:
-    // - For <Dial record="record-from-answer-dual"> with Voice SDK:
-    //   - Channel 1 = PSTN/Remote party (Customer being called)
-    //   - Channel 2 = WebRTC/Local party (Agent using browser dialer)
+    // Based on actual testing, the channel mapping for outbound calls via Voice SDK is:
+    // - Channel 1 = WebRTC/Browser (Agent making the call)
+    // - Channel 2 = PSTN/Phone (Customer being called)
     //
-    // This is because Twilio records the "inbound" leg (customer) on channel 1
-    // and the "outbound" leg (agent/browser) on channel 2 for Voice SDK calls.
-    //
-    // We swap the channel_participant values to correctly label speakers:
-    // - Customer -> channel_participant: 1
-    // - Agent -> channel_participant: 2
+    // This was verified by testing actual transcriptions where:
+    // - What the agent (browser user) said appeared on Channel 1
+    // - What the customer (phone) said appeared on Channel 2
     //
     const channelData = {
       media_properties: {
@@ -123,14 +120,14 @@ async function createTranscript(recordingSid, options = {}) {
       },
       participants: [
         {
-          user_id: options.customerId || "customer",
+          user_id: options.agentId || "agent",
           channel_participant: 1,
-          full_name: options.customerName || "Customer",
+          full_name: options.agentName || "Agent",
         },
         {
-          user_id: options.agentId || "agent",
+          user_id: options.customerId || "customer",
           channel_participant: 2,
-          full_name: options.agentName || "Agent",
+          full_name: options.customerName || "Customer",
         },
       ],
     };
@@ -206,12 +203,12 @@ async function getTranscript(transcriptSid, options = {}) {
 
         // Determine speaker based on multiple possible fields from Twilio
         //
-        // IMPORTANT: For Voice SDK (web dialer) dual-channel recordings:
-        // - Channel 1 = PSTN/Remote party (Customer on the phone)
-        // - Channel 2 = WebRTC/Local party (Agent using browser dialer)
+        // VERIFIED MAPPING for Voice SDK (web dialer) dual-channel recordings:
+        // - Channel 1 = WebRTC/Browser (Agent making the call)
+        // - Channel 2 = PSTN/Phone (Customer being called)
         //
-        // This is counter-intuitive but consistent with how Twilio routes audio
-        // for Voice SDK calls with <Dial record="record-from-answer-dual">.
+        // This was confirmed through actual testing where agent speech
+        // appeared on channel 1 and customer speech on channel 2.
         //
         const callDirection = options.callDirection || 'outbound';
         console.log(`Twilio Intelligence: Mapping channels for ${callDirection} call`);
@@ -221,12 +218,11 @@ async function getTranscript(transcriptSid, options = {}) {
           const mediaChannel = sentence.mediaChannel || sentence.media_channel;
 
           if (mediaChannel !== undefined && mediaChannel !== null) {
-            // For dual-channel recordings from Twilio Voice SDK with <Dial record="record-from-answer-dual">:
-            // Channel 1 = PSTN/Remote party (Customer)
-            // Channel 2 = WebRTC/Local party (Agent)
-            // This matches our participant configuration in createTranscript()
+            // VERIFIED: For dual-channel recordings from Twilio Voice SDK:
+            // Channel 1 = WebRTC/Browser (Agent)
+            // Channel 2 = PSTN/Phone (Customer)
             const channelNum = typeof mediaChannel === 'string' ? parseInt(mediaChannel, 10) : mediaChannel;
-            return channelNum === 1 ? "Customer" : "Agent";
+            return channelNum === 1 ? "Agent" : "Customer";
           }
 
           // Fallback to participant_role if available
@@ -244,13 +240,13 @@ async function getTranscript(transcriptSid, options = {}) {
             if (participant.toLowerCase().includes("customer")) {
               return "Customer";
             }
-            // If it's a number string, use the corrected mapping
-            if (participant === "1") return "Customer";
-            if (participant === "2") return "Agent";
+            // If it's a number string, use the verified mapping
+            if (participant === "1") return "Agent";
+            if (participant === "2") return "Customer";
           }
           if (typeof participant === "number") {
-            // Channel 1 = Customer, Channel 2 = Agent (for Voice SDK)
-            return participant === 1 ? "Customer" : "Agent";
+            // Channel 1 = Agent, Channel 2 = Customer (verified for Voice SDK)
+            return participant === 1 ? "Agent" : "Customer";
           }
 
           return "Unknown";
@@ -564,14 +560,18 @@ async function handleTranscriptionWebhook(webhookData) {
           );
 
           if (tags && tags.length > 0) {
-            // Initialize aiTags array if it doesn't exist
-            if (!callDoc.aiTags) {
-              callDoc.aiTags = [];
+            // Initialize tags object if it doesn't exist (uses tags.ai per Call model schema)
+            if (!callDoc.tags) {
+              callDoc.tags = { ai: [], custom: [] };
+            }
+            if (!callDoc.tags.ai) {
+              callDoc.tags.ai = [];
             }
             // Merge with existing tags (avoid duplicates)
-            const existingTags = callDoc.aiTags.map(t => t.toLowerCase());
+            const existingTags = callDoc.tags.ai.map(t => t.toLowerCase());
             const newTags = tags.filter(t => !existingTags.includes(t.toLowerCase()));
-            callDoc.aiTags = [...callDoc.aiTags, ...newTags];
+            callDoc.tags.ai = [...callDoc.tags.ai, ...newTags];
+            callDoc.tags.aiGeneratedAt = new Date();
             await callDoc.save();
 
             console.log(`Twilio Intelligence: Auto-generated ${newTags.length} AI tags for call ${callDoc.twilioCallSid}: ${newTags.join(', ')}`);

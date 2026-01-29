@@ -301,18 +301,22 @@ async function processCallRecording(callDoc) {
           );
 
           if (tags && tags.length > 0) {
-            // Initialize aiTags array if it doesn't exist
-            if (!callDoc.aiTags) {
-              callDoc.aiTags = [];
+            // Initialize tags object if it doesn't exist
+            if (!callDoc.tags) {
+              callDoc.tags = { ai: [], custom: [] };
+            }
+            if (!callDoc.tags.ai) {
+              callDoc.tags.ai = [];
             }
             // Merge with existing tags (avoid duplicates)
-            const existingTags = callDoc.aiTags.map(t => t.toLowerCase());
+            const existingTags = callDoc.tags.ai.map(t => t.toLowerCase());
             const newTags = tags.filter(t => !existingTags.includes(t.toLowerCase()));
-            callDoc.aiTags = [...callDoc.aiTags, ...newTags];
+            callDoc.tags.ai = [...callDoc.tags.ai, ...newTags];
+            callDoc.tags.aiGeneratedAt = new Date();
             await callDoc.save();
 
             console.log(`Auto-generated ${newTags.length} AI tags for call ${callDoc.twilioCallSid}: ${newTags.join(', ')}`);
-            result.tags = callDoc.aiTags;
+            result.tags = callDoc.tags.ai;
           }
         } catch (tagError) {
           // Don't fail the whole process if tag generation fails
