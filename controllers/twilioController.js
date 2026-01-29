@@ -300,6 +300,13 @@ exports.handleExtensionSelection = async (req, res) => {
  * Handle call status updates
  * POST /api/twilio/call-status
  * Called by Twilio for status updates on all calls
+ *
+ * IMPORTANT: For web dialer outbound calls, there are TWO call legs:
+ * 1. Parent call (browser <-> Twilio) - Direction: "outbound-api", From: "client:identity"
+ * 2. Child call (Twilio <-> customer) - Direction: "outbound-dial", has ParentCallSid
+ *
+ * We track the PARENT call (created in outboundBridge) and update it with child call info.
+ * Child calls have ParentCallSid set and should NOT create separate records.
  */
 exports.handleCallStatus = async (req, res) => {
   try {
@@ -317,49 +324,129 @@ exports.handleCallStatus = async (req, res) => {
     const timestamp = req.body?.Timestamp;
     const duration = req.body?.Duration;
 
-    // Normalize phone numbers
+    console.log(`Call status webhook: CallSid=${callSid}, Status=${callStatus}, ParentCallSid=${parentCallSid || 'none'}, Direction=${direction}, From=${fromNumber}`);
+
+    // CRITICAL: If this call has a ParentCallSid, it's a child call leg (e.g., the customer leg).
+    // We should update the PARENT call record instead of creating a new one.
+    // This prevents duplicate "inbound" and "outbound" records for the same call.
+    if (parentCallSid) {
+      // This is a child call - update the parent call record with child status info
+      const parentCall = await Call.findOne({ twilioCallSid: parentCallSid });
+
+      if (parentCall) {
+        // Update parent call with child call status (the customer leg status is more meaningful)
+        const terminalStatuses = ["completed", "busy", "failed", "no-answer", "canceled"];
+
+        // Always update status if child call has answered or terminal status
+        if (callStatus?.toLowerCase() === "answered" || callStatus?.toLowerCase() === "in-progress") {
+          parentCall.status = "in-progress";
+          await parentCall.save();
+          console.log(`Updated parent call ${parentCallSid} to in-progress (child answered)`);
+        } else if (terminalStatuses.includes(callStatus?.toLowerCase())) {
+          parentCall.status = callStatus;
+          parentCall.endTime = new Date();
+
+          // Update duration from child call (actual talk time with customer)
+          if (duration && !isNaN(Number(duration)) && Number(duration) >= 0) {
+            parentCall.durationSeconds = Math.floor(Number(duration));
+          }
+
+          // Store child call metadata
+          parentCall.metadata = parentCall.metadata || {};
+          parentCall.metadata.childCallStatus = {
+            childCallSid: callSid,
+            status: callStatus,
+            duration: duration,
+            timestamp: timestamp,
+          };
+
+          await parentCall.save();
+          console.log(`Updated parent call ${parentCallSid} with child terminal status: ${callStatus}`);
+
+          // Trigger transcription if recording available
+          if (
+            parentCall.recordingUrl &&
+            parentCall.transcription?.status !== "completed" &&
+            parentCall.transcription?.status !== "processing"
+          ) {
+            processCallRecording(parentCall).catch((error) => {
+              console.error("Background transcription/summary processing error:", error);
+            });
+          }
+        }
+      } else {
+        console.log(`Parent call ${parentCallSid} not found for child ${callSid}, skipping`);
+      }
+
+      // Don't create a separate record for child calls
+      return res.status(200).send("OK");
+    }
+
+    // Check if this is a Voice SDK parent call (browser leg)
+    // These have From starting with "client:" and Direction "outbound-api"
+    const isVoiceSdkParentCall = fromNumber?.startsWith("client:") ||
+                                  direction?.toLowerCase() === "outbound-api";
+
+    // For Voice SDK parent calls, only update the existing record created by outboundBridge
+    // Don't create new records from parent call status callbacks
+    if (isVoiceSdkParentCall) {
+      const existingCall = await Call.findOne({ twilioCallSid: callSid });
+
+      if (existingCall) {
+        // Update the existing record (created by outboundBridge)
+        const terminalStatuses = ["completed", "busy", "failed", "no-answer", "canceled"];
+
+        // Only update if the status is meaningful (not just "initiated" or "ringing")
+        // The child call status is more important for final status
+        if (terminalStatuses.includes(callStatus?.toLowerCase())) {
+          // Only update if not already updated by child call
+          if (!existingCall.metadata?.childCallStatus) {
+            existingCall.status = callStatus;
+            existingCall.endTime = new Date();
+            if (duration && !isNaN(Number(duration))) {
+              existingCall.durationSeconds = Math.floor(Number(duration));
+            }
+          }
+          existingCall.metadata = existingCall.metadata || {};
+          existingCall.metadata.parentCallFinalStatus = {
+            status: callStatus,
+            duration: duration,
+            timestamp: timestamp,
+          };
+          await existingCall.save();
+          console.log(`Updated Voice SDK parent call ${callSid} with status: ${callStatus}`);
+        }
+      } else {
+        // Voice SDK parent call without a record - this shouldn't happen normally
+        // as outboundBridge should have created it. Skip to avoid duplicates.
+        console.log(`Voice SDK parent call ${callSid} has no record, skipping (should be created by outboundBridge)`);
+      }
+
+      return res.status(200).send("OK");
+    }
+
+    // This is a regular call (inbound or direct outbound API call) - process normally
     const normalizedFrom = fromNumber ? normalizePhoneNumber(fromNumber) : null;
     const normalizedTo = toNumber ? normalizePhoneNumber(toNumber) : null;
 
-    // Determine direction
-    const callDirection =
-      direction && direction.toLowerCase().includes("inbound")
-        ? "inbound"
-        : "outbound";
+    // Determine direction based on Twilio's Direction field
+    let callDirection = "outbound";
+    if (direction) {
+      if (direction.toLowerCase().includes("inbound")) {
+        callDirection = "inbound";
+      }
+    }
 
     // Prepare update data
     const updateData = {
       status: callStatus,
-      metadata: {
-        lastStatusWebhook: {
-          CallSid: callSid,
-          CallStatus: callStatus,
-          From: fromNumber,
-          To: toNumber,
-          Direction: direction,
-          Timestamp: timestamp,
-          Duration: duration,
-        },
-      },
     };
 
-    if (parentCallSid) {
-      updateData.parentCallSid = parentCallSid;
-    }
+    // Store webhook metadata (don't overwrite existing metadata)
+    // We'll merge it later
 
     if (duration && !isNaN(Number(duration)) && Number(duration) >= 0) {
       updateData.durationSeconds = Math.floor(Number(duration));
-    }
-
-    if (timestamp) {
-      try {
-        const timestampDate = new Date(timestamp);
-        if (!isNaN(timestampDate.getTime())) {
-          updateData.startTime = timestampDate;
-        }
-      } catch (e) {
-        // Invalid timestamp, skip
-      }
     }
 
     // Set end time for terminal statuses
@@ -374,21 +461,30 @@ exports.handleCallStatus = async (req, res) => {
       updateData.endTime = new Date();
     }
 
-    // Find or create call record
+    // Find existing call record
     let callDoc = await Call.findOne({ twilioCallSid: callSid });
 
     if (callDoc) {
       // Update existing call
-      Object.assign(callDoc, updateData);
-      if (normalizedFrom && !callDoc.fromNumber) {
-        callDoc.fromNumber = normalizedFrom;
+      callDoc.status = updateData.status;
+      if (updateData.durationSeconds !== undefined) {
+        callDoc.durationSeconds = updateData.durationSeconds;
       }
-      if (normalizedTo && !callDoc.toNumber) {
-        callDoc.toNumber = normalizedTo;
+      if (updateData.endTime) {
+        callDoc.endTime = updateData.endTime;
       }
-      if (!callDoc.direction) {
-        callDoc.direction = callDirection;
-      }
+
+      // Update metadata
+      callDoc.metadata = callDoc.metadata || {};
+      callDoc.metadata.lastStatusWebhook = {
+        CallSid: callSid,
+        CallStatus: callStatus,
+        From: fromNumber,
+        To: toNumber,
+        Direction: direction,
+        Timestamp: timestamp,
+        Duration: duration,
+      };
 
       // Re-attach business context if call is completing
       if (terminalStatuses.includes(callStatus?.toLowerCase())) {
@@ -396,6 +492,7 @@ exports.handleCallStatus = async (req, res) => {
       }
 
       await callDoc.save();
+      console.log(`Updated call ${callSid} with status: ${callStatus}`);
 
       // If call is completed and recording is available, trigger transcription/summary
       if (
@@ -404,21 +501,40 @@ exports.handleCallStatus = async (req, res) => {
         callDoc.transcription?.status !== "completed" &&
         callDoc.transcription?.status !== "processing"
       ) {
-        // Process transcription and summary asynchronously (don't block webhook response)
         processCallRecording(callDoc).catch((error) => {
           console.error("Background transcription/summary processing error:", error);
-          // Error is already logged in processCallRecording, just catch to prevent unhandled rejection
         });
       }
     } else {
-      // Create new call record if it doesn't exist
+      // Create new call record only if it doesn't exist
+      // This handles inbound calls that don't go through outbound-bridge
+      console.log(`Creating new call record for ${callSid}`);
+
       const newCallData = {
         twilioCallSid: callSid,
         direction: callDirection,
         fromNumber: normalizedFrom || fromNumber || "unknown",
         toNumber: normalizedTo || toNumber || "unknown",
-        ...updateData,
+        status: callStatus,
+        metadata: {
+          lastStatusWebhook: {
+            CallSid: callSid,
+            CallStatus: callStatus,
+            From: fromNumber,
+            To: toNumber,
+            Direction: direction,
+            Timestamp: timestamp,
+            Duration: duration,
+          },
+        },
       };
+
+      if (updateData.durationSeconds !== undefined) {
+        newCallData.durationSeconds = updateData.durationSeconds;
+      }
+      if (updateData.endTime) {
+        newCallData.endTime = updateData.endTime;
+      }
 
       callDoc = new Call(newCallData);
       await attachBusinessContext(callDoc);
@@ -489,11 +605,25 @@ exports.handleRecordingStatus = async (req, res) => {
       );
     }
 
-    const updatedCall = await Call.findOneAndUpdate(
+    // Try to find the call record - it might be under the parent call SID for Voice SDK calls
+    let updatedCall = await Call.findOneAndUpdate(
       { twilioCallSid: callSid },
       { $set: updateData },
-      { new: true, upsert: false } // Don't create if doesn't exist - should already exist from call-status
+      { new: true, upsert: false }
     );
+
+    // If not found, check if this callSid is stored as a child call in metadata
+    if (!updatedCall) {
+      // Try to find by child call SID in metadata
+      updatedCall = await Call.findOneAndUpdate(
+        { "metadata.childCallStatus.childCallSid": callSid },
+        { $set: updateData },
+        { new: true, upsert: false }
+      );
+      if (updatedCall) {
+        console.log(`Recording attached to parent call via child SID lookup: ${updatedCall.twilioCallSid}`);
+      }
+    }
 
     // If call record exists and recording is ready, trigger transcription/summary processing
     if (updatedCall) {
@@ -523,6 +653,15 @@ exports.handleRecordingStatus = async (req, res) => {
  * Handle outbound bridge TwiML
  * GET/POST /api/twilio/outbound-bridge
  * Called by Twilio to bridge agent to customer
+ *
+ * This is the TwiML endpoint called when a Voice SDK device.connect() is made.
+ * It receives the CallSid of the parent call (browser <-> Twilio) and creates
+ * a child call to the customer.
+ *
+ * IMPORTANT: To avoid duplicate call records:
+ * - We create ONE call record here for the parent CallSid
+ * - The child call (to customer) will send status callbacks with ParentCallSid
+ * - handleCallStatus will update the parent record, not create a new one
  */
 exports.outboundBridge = async (req, res) => {
   try {
@@ -550,6 +689,10 @@ exports.outboundBridge = async (req, res) => {
       req.body?.fromNumber ||
       req.body?.FromNumber ||
       null;
+
+    const callSid = req.body?.CallSid || req.query?.CallSid;
+
+    console.log(`Outbound bridge called: CallSid=${callSid}, To=${toNumber}`);
 
     if (!toNumber) {
       console.error("Outbound bridge missing destination number");
@@ -580,63 +723,71 @@ exports.outboundBridge = async (req, res) => {
     const recordingCallbackUrl = buildTwiMLUrl(baseUrl, "/recording-status");
     const statusCallbackUrl = buildTwiMLUrl(baseUrl, "/call-status");
 
+    const callerIdUsed =
+      explicitCallerId ||
+      twilioConfig.outboundCallerId ||
+      twilioConfig.primaryNumber ||
+      undefined;
+
+    // Configure dial with status callback for the child call
+    // The 'action' URL is called when the dial completes (used for post-dial logic)
+    // We use statusCallback on the <Number> to get child call status updates
     const dial = twiml.dial({
-      callerId:
-        explicitCallerId ||
-        twilioConfig.outboundCallerId ||
-        twilioConfig.primaryNumber ||
-        undefined,
+      callerId: callerIdUsed,
       timeout: 30,
+      // Recording on the dial captures both sides of the conversation
       record: shouldRecord ? "record-from-answer-dual" : "do-not-record",
       recordingStatusCallback: shouldRecord ? recordingCallbackUrl : undefined,
       recordingStatusCallbackMethod: shouldRecord ? "POST" : undefined,
-      action: statusCallbackUrl,
-      method: "POST",
+      // Don't set 'action' - let the call end naturally
+      // The parent call status callback will handle the final status
     });
 
+    // The <Number> element creates a child call to the customer
+    // The statusCallback here will include ParentCallSid, which we use to
+    // update the parent call record instead of creating a duplicate
     dial.number(
       {
         statusCallback: statusCallbackUrl,
-        statusCallbackEvent: ["initiated", "ringing", "answered", "completed"],
+        statusCallbackEvent: ["answered", "completed"], // Only track meaningful events
         statusCallbackMethod: "POST",
       },
       normalizedTo
     );
 
-    // Create initial call record immediately (don't wait for status callback)
-    // This ensures the call appears in the dashboard right away
-    const callSid = req.body?.CallSid || req.query?.CallSid;
+    // Create initial call record immediately for the PARENT call
+    // This is the main call record that will be displayed in the dashboard
     if (callSid) {
-      const callerIdUsed =
-        explicitCallerId ||
-        twilioConfig.outboundCallerId ||
-        twilioConfig.primaryNumber ||
-        "unknown";
-
       try {
-        // Use upsert to avoid duplicates if status callback already created the record
         let callDoc = await Call.findOne({ twilioCallSid: callSid });
         if (!callDoc) {
           callDoc = new Call({
             twilioCallSid: callSid,
             direction: "outbound",
-            fromNumber: callerIdUsed,
+            fromNumber: callerIdUsed || "unknown",
             toNumber: normalizedTo,
-            status: "initiated",
+            status: "ringing", // Call is now ringing the customer
             startTime: new Date(),
             metadata: {
-              source: "outbound-bridge",
-              dialerType: "web-softphone",
+              source: "web-dialer",
+              dialerType: "voice-sdk",
+              customerNumber: normalizedTo,
             },
           });
           // Try to attach business context based on the destination number
           await attachBusinessContext(callDoc);
           await callDoc.save();
-          console.log(`Created initial call record for outbound call ${callSid} to ${normalizedTo}`);
+          console.log(`Created call record for ${callSid} -> ${normalizedTo}`);
+        } else {
+          // Update existing record if it was created by a previous webhook
+          callDoc.status = "ringing";
+          callDoc.toNumber = normalizedTo;
+          await callDoc.save();
+          console.log(`Updated existing call record ${callSid} to ringing`);
         }
       } catch (saveError) {
         // Don't fail the TwiML response if saving fails
-        console.error("Error creating initial call record:", saveError);
+        console.error("Error saving call record:", saveError);
       }
     }
 
@@ -2433,6 +2584,61 @@ exports.exportCallsToCSV = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Error exporting calls",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
+
+/**
+ * Cleanup stale calls
+ * POST /api/twilio/calls/cleanup
+ * Marks old in-progress/ringing calls as failed
+ */
+exports.cleanupStaleCalls = async (req, res) => {
+  try {
+    // Find calls that have been in non-terminal status for more than 1 hour
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+
+    // Non-terminal statuses that indicate a call might be stuck
+    const staleStatuses = [
+      "initiated",
+      "ringing",
+      "in-progress",
+      "queued",
+    ];
+
+    const staleCalls = await Call.find({
+      status: { $in: staleStatuses },
+      createdAt: { $lt: oneHourAgo },
+    });
+
+    let updatedCount = 0;
+
+    for (const call of staleCalls) {
+      call.status = "failed";
+      call.metadata = call.metadata || {};
+      call.metadata.cleanupReason = "Marked as failed by cleanup job - call was stuck in non-terminal state";
+      call.metadata.cleanupAt = new Date();
+      call.endTime = call.endTime || new Date();
+      await call.save();
+      updatedCount++;
+      console.log(`Cleaned up stale call ${call.twilioCallSid} (was: ${call.status})`);
+    }
+
+    res.json({
+      success: true,
+      message: `Cleaned up ${updatedCount} stale calls`,
+      data: {
+        totalFound: staleCalls.length,
+        updated: updatedCount,
+        cutoffTime: oneHourAgo.toISOString(),
+      },
+    });
+  } catch (error) {
+    console.error("Cleanup stale calls error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error cleaning up stale calls",
       error: process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }

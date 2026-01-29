@@ -25,6 +25,7 @@ const {
   getCallRecording,
   transcribeCall,
   getCallById,
+  cleanupStaleCalls,
 } = require("../controllers/twilioController");
 const { authenticate, requireAdmin } = require("../middleware/auth");
 const { validateTwilioSignature } = require("../middleware/twilioValidation");
@@ -117,6 +118,9 @@ router.get("/calls/:callId/recording", authenticate, requireAdmin, getCallRecord
 
 // Manually trigger transcription and summary
 router.post("/calls/:callId/transcribe", authenticate, requireAdmin, transcribeCall);
+
+// Cleanup stale calls (mark old in-progress calls as failed)
+router.post("/calls/cleanup", authenticate, requireAdmin, cleanupStaleCalls);
 
 // Call statistics
 router.get("/calls/stats", authenticate, requireAdmin, getCallStats);
