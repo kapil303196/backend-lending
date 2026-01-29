@@ -288,6 +288,37 @@ async function processCallRecording(callDoc) {
         await callDoc.save();
 
         result.summary = summaryText;
+
+        // Auto-generate tags after summary is created
+        try {
+          const tags = await generateCallTags(
+            callDoc.transcription.text,
+            summaryText,
+            {
+              direction: callDoc.direction,
+              businessName: callDoc.businessName,
+            }
+          );
+
+          if (tags && tags.length > 0) {
+            // Initialize aiTags array if it doesn't exist
+            if (!callDoc.aiTags) {
+              callDoc.aiTags = [];
+            }
+            // Merge with existing tags (avoid duplicates)
+            const existingTags = callDoc.aiTags.map(t => t.toLowerCase());
+            const newTags = tags.filter(t => !existingTags.includes(t.toLowerCase()));
+            callDoc.aiTags = [...callDoc.aiTags, ...newTags];
+            await callDoc.save();
+
+            console.log(`Auto-generated ${newTags.length} AI tags for call ${callDoc.twilioCallSid}: ${newTags.join(', ')}`);
+            result.tags = callDoc.aiTags;
+          }
+        } catch (tagError) {
+          // Don't fail the whole process if tag generation fails
+          console.error("Auto tag generation error (non-fatal):", tagError.message);
+          result.errors.push(`Tags (non-fatal): ${tagError.message}`);
+        }
       } catch (summaryError) {
         console.error("Summarization error:", summaryError);
         callDoc.summary.status = "failed";

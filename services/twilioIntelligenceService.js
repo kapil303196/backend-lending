@@ -550,6 +550,36 @@ async function handleTranscriptionWebhook(webhookData) {
         await callDoc.save();
 
         console.log(`Twilio Intelligence: Summary generated for call ${callDoc.twilioCallSid}`);
+
+        // Auto-generate tags after summary is created
+        try {
+          const { generateCallTags } = require("./openaiService");
+          const tags = await generateCallTags(
+            transcriptData.fullText,
+            summaryText,
+            {
+              direction: callDoc.direction,
+              businessName: callDoc.businessName,
+            }
+          );
+
+          if (tags && tags.length > 0) {
+            // Initialize aiTags array if it doesn't exist
+            if (!callDoc.aiTags) {
+              callDoc.aiTags = [];
+            }
+            // Merge with existing tags (avoid duplicates)
+            const existingTags = callDoc.aiTags.map(t => t.toLowerCase());
+            const newTags = tags.filter(t => !existingTags.includes(t.toLowerCase()));
+            callDoc.aiTags = [...callDoc.aiTags, ...newTags];
+            await callDoc.save();
+
+            console.log(`Twilio Intelligence: Auto-generated ${newTags.length} AI tags for call ${callDoc.twilioCallSid}: ${newTags.join(', ')}`);
+          }
+        } catch (tagError) {
+          // Don't fail the whole process if tag generation fails
+          console.error("Twilio Intelligence: Auto tag generation error (non-fatal):", tagError.message);
+        }
       } catch (summaryError) {
         console.error("Summary generation error:", summaryError);
         callDoc.summary = {
