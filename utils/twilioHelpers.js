@@ -72,6 +72,9 @@ function mapTwilioAccountToConfig(account) {
     apiKey: account.apiKey || "",
     apiSecret: account.apiSecret || "",
 
+    // TwiML Application SID (required for Voice SDK)
+    twimlAppSid: account.twimlAppSid || "",
+
     // Numbers / callerId
     primaryNumber,
     outboundCallerId: primaryNumber,

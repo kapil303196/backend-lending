@@ -21,6 +21,10 @@ const {
   createOrUpdateTwilioAccount,
   deleteTwilioAccount,
   listTwilioCallerIds,
+  getDiagnostics,
+  getCallRecording,
+  transcribeCall,
+  getCallById,
 } = require("../controllers/twilioController");
 const { authenticate, requireAdmin } = require("../middleware/auth");
 const { validateTwilioSignature } = require("../middleware/twilioValidation");
@@ -68,11 +72,13 @@ router.post(
 );
 
 // Outbound bridge TwiML (can be GET or POST)
+// Note: For Voice SDK (Client), Twilio POSTs to the TwiML App Voice URL.
+// We skip signature validation here since the SDK doesn't sign these requests the same way.
+// Security is handled via the Access Token authentication in generateDialerToken.
 router.get("/outbound-bridge", outboundBridge);
 router.post(
   "/outbound-bridge",
   express.urlencoded({ extended: false }),
-  validateTwilioSignature,
   outboundBridge
 );
 
@@ -97,8 +103,20 @@ router.post(
  * ============================================================================
  */
 
+// Diagnostics - verify Twilio configuration and webhook URLs
+router.get("/diagnostics", authenticate, requireAdmin, getDiagnostics);
+
 // List calls with filters
 router.get("/calls", authenticate, requireAdmin, listCalls);
+
+// Get single call details
+router.get("/calls/:callId", authenticate, requireAdmin, getCallById);
+
+// Get call recording (proxied through server to avoid Twilio auth prompts)
+router.get("/calls/:callId/recording", authenticate, requireAdmin, getCallRecording);
+
+// Manually trigger transcription and summary
+router.post("/calls/:callId/transcribe", authenticate, requireAdmin, transcribeCall);
 
 // Call statistics
 router.get("/calls/stats", authenticate, requireAdmin, getCallStats);

@@ -6,6 +6,7 @@ const OpenAI = require("openai");
 const axios = require("axios");
 const FormData = require("form-data");
 const AdminConfig = require("../models/AdminConfig");
+const { getTwilioConfig } = require("../utils/twilioHelpers");
 
 /**
  * Get OpenAI configuration from AdminConfig
@@ -34,20 +35,67 @@ async function createOpenAIClient() {
 
 /**
  * Download audio file from URL and return as buffer
+ * Handles Twilio recording URLs that require authentication
  * @param {string} audioUrl - URL of the audio file
  * @returns {Promise<Buffer>} Audio file buffer
  */
 async function downloadAudio(audioUrl) {
   try {
+    // Check if this is a Twilio recording URL that needs authentication
+    const isTwilioUrl = audioUrl.includes("api.twilio.com") || audioUrl.includes("twilio.com");
+
+    let authConfig = {};
+    if (isTwilioUrl) {
+      // Get Twilio credentials for authentication
+      const twilioConfig = await getTwilioConfig();
+      authConfig = {
+        auth: {
+          username: twilioConfig.accountSid,
+          password: twilioConfig.authToken,
+        },
+      };
+    }
+
     const response = await axios.get(audioUrl, {
       responseType: "arraybuffer",
       timeout: 60000, // 60 second timeout
       maxContentLength: 100 * 1024 * 1024, // 100MB max
+      ...authConfig,
     });
     return Buffer.from(response.data);
   } catch (error) {
     console.error("Error downloading audio:", error.message);
     throw new Error(`Failed to download audio: ${error.message}`);
+  }
+}
+
+/**
+ * Download Twilio recording with authentication
+ * Used by the proxy endpoint to stream recordings to frontend
+ * @param {string} recordingUrl - Twilio recording URL
+ * @returns {Promise<{buffer: Buffer, contentType: string}>} Audio buffer and content type
+ */
+async function downloadTwilioRecording(recordingUrl) {
+  try {
+    const twilioConfig = await getTwilioConfig();
+
+    const response = await axios.get(recordingUrl, {
+      responseType: "arraybuffer",
+      timeout: 60000,
+      maxContentLength: 100 * 1024 * 1024,
+      auth: {
+        username: twilioConfig.accountSid,
+        password: twilioConfig.authToken,
+      },
+    });
+
+    return {
+      buffer: Buffer.from(response.data),
+      contentType: response.headers["content-type"] || "audio/mpeg",
+    };
+  } catch (error) {
+    console.error("Error downloading Twilio recording:", error.message);
+    throw new Error(`Failed to download recording: ${error.message}`);
   }
 }
 
@@ -264,4 +312,5 @@ module.exports = {
   transcribeAudio,
   summarizeTranscription,
   processCallRecording,
+  downloadTwilioRecording,
 };
