@@ -1027,6 +1027,40 @@ exports.listCalls = async (req, res) => {
       Call.countDocuments(query),
     ]);
 
+    // Optimize with Promise.all to handle search in parallel
+    await Promise.all(items.map(async (call) => {
+      // 1. Use linked MCA company name if businessName is missing
+      if (!call.businessName && call.mcaId) {
+        call.businessName = call.mcaId?.company || call.mcaId?.name;
+      }
+
+      // 2. Identify and search if still no business identified
+      if (!call.businessName && !call.mcaId) {
+        const phone = call.direction === 'inbound' ? call.fromNumber : call.toNumber;
+        const normalized = normalizePhoneNumber(phone);
+        
+        if (normalized) {
+           // Simple lookup for the phone number
+           const mca = await MCA.findOne({
+             $or: [
+              //  { phoneNumber: normalized },
+              //  { phone: normalized },
+              //  { cell: normalized },
+              //  { mobile: normalized },
+              //  { businessPhone: normalized },
+               { phoneNumber: phone }, // Check original
+              //  { phone: phone }
+             ]
+           }).select('company businessName uniqueId').lean();
+
+           if (mca) {
+             call.businessName = mca?.company || mca?.businessName;
+             call.mcaId = mca;
+           }
+        }
+      }
+    }));
+
     res.json({
       success: true,
       data: items,
