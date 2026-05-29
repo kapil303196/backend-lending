@@ -441,6 +441,198 @@ class EmailService {
   }
 
   /**
+   * Send admin notification on successful form submission
+   * @param {Object} response - The UserResponse document or object
+   */
+  async sendAdminUserResponseNotification(response) {
+    const adminEmailsStr = process.env.ADMIN_EMAILS || "camerongroom@gmail.com,josh@palisadesadvance.com";
+    const adminEmails = adminEmailsStr.split(",").map(e => e.trim()).filter(Boolean);
+
+    if (adminEmails.length === 0) {
+      console.warn("⚠️ No admin emails configured in .env (ADMIN_EMAILS)");
+      return;
+    }
+
+    const { uniqueId, formData, bankStatements, submittedAt, ipAddress, userAgent } = response;
+    const submissionDate = submittedAt ? new Date(submittedAt).toLocaleString() : new Date().toLocaleString();
+
+    // 1. If SendGrid is active and template ID is set
+    if (this.useSendGrid && this.templateIds.adminUserResponseTemplate) {
+      console.log("✅ Using SendGrid Dynamic Template for admin notification email");
+      
+      const sendPromises = adminEmails.map(adminEmail => {
+        return this.sendEmail({
+          to: adminEmail,
+          templateId: this.templateIds.adminUserResponseTemplate,
+          dynamicTemplateData: {
+            uniqueId,
+            formData: {
+              ...formData,
+              hasExistingBalances: formData.hasExistingBalances === 'yes' || formData.hasExistingBalances === true,
+            },
+            bankStatements: bankStatements || [],
+            submittedAt: submissionDate,
+            ipAddress: ipAddress || "N/A",
+            userAgent: userAgent || "N/A",
+            currentYear: new Date().getFullYear()
+          }
+        });
+      });
+
+      return Promise.all(sendPromises);
+    }
+
+    // 2. Fallback: Read and render html file manually
+    try {
+      const fs = require("fs").promises;
+      const path = require("path");
+      const filePath = path.join(__dirname, "..", "files", "sendgrid-admin-user-response-template.html");
+      let htmlContent = await fs.readFile(filePath, "utf8");
+
+      // Replace simple string placeholders
+      const data = {
+        uniqueId: uniqueId || "",
+        "formData.amountRequested": formData.amountRequested || "N/A",
+        "formData.monthlyRevenue": formData.monthlyRevenue || "N/A",
+        "formData.legalBusinessName": formData.legalBusinessName || "N/A",
+        "formData.dba": formData.dba || "",
+        "formData.businessEmail": formData.businessEmail || "N/A",
+        "formData.ein": formData.ein || "N/A",
+        "formData.businessStartDate": formData.businessStartDate || "N/A",
+        "formData.streetAddress": formData.streetAddress || "N/A",
+        "formData.city": formData.city || "",
+        "formData.state": formData.state || "",
+        "formData.zipCode": formData.zipCode || "",
+        "formData.firstName": formData.firstName || "",
+        "formData.lastName": formData.lastName || "",
+        "formData.ownerEmail": formData.ownerEmail || "N/A",
+        "formData.phone": formData.phone || "N/A",
+        "formData.dateOfBirth": formData.dateOfBirth || "N/A",
+        "formData.ssn": formData.ssn || "",
+        "formData.ownershipPercent": formData.ownershipPercent || "",
+        "formData.ownerStreetAddress": formData.ownerStreetAddress || "",
+        "formData.ownerCity": formData.ownerCity || "",
+        "formData.ownerState": formData.ownerState || "",
+        "formData.ownerZip": formData.ownerZip || "",
+        submittedAt: submissionDate,
+        ipAddress: ipAddress || "N/A",
+        userAgent: userAgent || "N/A",
+        currentYear: new Date().getFullYear().toString()
+      };
+
+      // Handle simple text replaces
+      for (const [key, val] of Object.entries(data)) {
+        const regex = new RegExp(`{{\\s*${key}\\s*}}`, "g");
+        htmlContent = htmlContent.replace(regex, val);
+      }
+
+      // Handle custom simple sections/conditionals
+      // DBA Conditional
+      if (formData.dba) {
+        htmlContent = htmlContent
+          .replace(/{{\s*#if\s+formData\.dba\s*}}([\s\S]*?){{\s*\/if\s*}}/, "$1");
+      } else {
+        htmlContent = htmlContent
+          .replace(/{{\s*#if\s+formData\.dba\s*}}([\s\S]*?){{\s*\/if\s*}}/, "");
+      }
+
+      // SSN Conditional
+      if (formData.ssn) {
+        htmlContent = htmlContent
+          .replace(/{{\s*#if\s+formData\.ssn\s*}}([\s\S]*?){{\s*\/if\s*}}/, "$1");
+      } else {
+        htmlContent = htmlContent
+          .replace(/{{\s*#if\s+formData\.ssn\s*}}([\s\S]*?){{\s*\/if\s*}}/, "");
+      }
+
+      // Ownership % Conditional
+      if (formData.ownershipPercent) {
+        htmlContent = htmlContent
+          .replace(/{{\s*#if\s+formData\.ownershipPercent\s*}}([\s\S]*?){{\s*\/if\s*}}/, "$1");
+      } else {
+        htmlContent = htmlContent
+          .replace(/{{\s*#if\s+formData\.ownershipPercent\s*}}([\s\S]*?){{\s*\/if\s*}}/, "");
+      }
+
+      // Existing Balances Conditional
+      const hasBalances = formData.hasExistingBalances === 'yes' || formData.hasExistingBalances === true;
+      if (hasBalances) {
+        htmlContent = htmlContent
+          .replace(/{{\s*#if\s+formData\.hasExistingBalances\s*}}([\s\S]*?){{\s*\/else\s*}}([\s\S]*?){{\s*\/if\s*}}/, "$1");
+      } else {
+        htmlContent = htmlContent
+          .replace(/{{\s*#if\s+formData\.hasExistingBalances\s*}}([\s\S]*?){{\s*\/else\s*}}([\s\S]*?){{\s*\/if\s*}}/, "$2");
+      }
+
+      // Existing Funders
+      if (hasBalances && formData.existingFunders && formData.existingFunders.length > 0) {
+        const fundersHtml = formData.existingFunders.map(f => `<li>${f}</li>`).join("");
+        htmlContent = htmlContent
+          .replace(/{{\s*#if\s+formData\.existingFunders\s*}}([\s\S]*?){{\s*\/if\s*}}/, `<ul>${fundersHtml}</ul>`);
+      } else {
+        htmlContent = htmlContent
+          .replace(/{{\s*#if\s+formData\.existingFunders\s*}}([\s\S]*?){{\s*\/if\s*}}/, "Not specified");
+      }
+
+      // Bank Statements
+      if (bankStatements && bankStatements.length > 0) {
+        const statementsHtml = bankStatements.map(file => `
+          <div class="bank-statement-item">
+            <span class="bank-statement-icon">📄</span>
+            <div class="bank-statement-details">
+              <div class="bank-statement-name">${file.originalName || "Statement"}</div>
+            </div>
+            <a href="${file.url}" class="bank-statement-link" target="_blank">Download</a>
+          </div>
+        `).join("");
+
+        htmlContent = htmlContent
+          .replace(/{{\s*#if\s+bankStatements\s*}}([\s\S]*?){{\s*\/else\s*}}([\s\S]*?){{\s*\/if\s*}}/, statementsHtml);
+      } else {
+        const noStatementsHtml = `<p style="color: #64748b; font-size: 14px; margin-bottom: 20px; font-style: italic;">No bank statements uploaded with this submission.</p>`;
+        htmlContent = htmlContent
+          .replace(/{{\s*#if\s+bankStatements\s*}}([\s\S]*?){{\s*\/else\s*}}([\s\S]*?){{\s*\/if\s*}}/, noStatementsHtml);
+      }
+
+      // Send to all administrators
+      const sendPromises = adminEmails.map(adminEmail => {
+        return this.sendEmail({
+          to: adminEmail,
+          subject: `🔔 New MCA Application Submitted: ${formData.legalBusinessName || "Business"}`,
+          html: htmlContent
+        });
+      });
+
+      return Promise.all(sendPromises);
+    } catch (err) {
+      console.error("❌ Failed to render and send admin notification email fallback:", err);
+      // Try plain text fallback if HTML template read failed
+      const plainText = `
+        New MCA Application Submitted!
+        Unique ID: ${uniqueId}
+        Business Name: ${formData.legalBusinessName}
+        Owner Name: ${formData.firstName} ${formData.lastName}
+        Email: ${formData.businessEmail}
+        Phone: ${formData.phone}
+        Amount Requested: ${formData.amountRequested}
+        Monthly Revenue: ${formData.monthlyRevenue}
+        Submitted At: ${submissionDate}
+      `;
+
+      const sendPromises = adminEmails.map(adminEmail => {
+        return this.sendEmail({
+          to: adminEmail,
+          subject: `🔔 New MCA Application Submitted: ${formData.legalBusinessName || "Business"}`,
+          text: plainText
+        });
+      });
+
+      return Promise.all(sendPromises);
+    }
+  }
+
+
+  /**
    * Send application submission confirmation
    */
   async sendApplicationConfirmation(userEmail, applicationData) {

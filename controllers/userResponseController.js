@@ -294,6 +294,15 @@ exports.createResponse = async (req, res) => {
       // Don't fail the request if email fails - log it for admin review
     }
 
+    // Send admin notification email
+    try {
+      await emailService.sendAdminUserResponseNotification(userResponse);
+      console.log(`✅ Admin notification emails sent successfully for application ${uniqueId}`);
+    } catch (adminEmailError) {
+      console.error(`❌ Failed to send admin notification email for application ${uniqueId}:`, adminEmailError.message);
+      // Don't fail the main request if notification email fails
+    }
+
     res.status(201).json({
       success: true,
       message: "Response submitted successfully",
