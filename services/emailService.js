@@ -263,7 +263,14 @@ class EmailService {
     if (options.templateId) {
       msg.templateId = options.templateId;
       msg.dynamicTemplateData = options.dynamicTemplateData || {};
-      // Note: Subject is usually defined in the template, but can be overridden if needed via dynamic data
+      // Subject is usually defined in the template, but if the template has no
+      // subject configured a code-provided subject must be passed through,
+      // otherwise the email is delivered with a blank subject line.
+      if (options.subject) {
+        msg.subject = options.subject;
+        msg.dynamicTemplateData.subject =
+          msg.dynamicTemplateData.subject || options.subject;
+      }
     } else {
       msg.subject = options.subject;
       msg.text = options.text || this.stripHtml(options.html);
@@ -445,7 +452,7 @@ class EmailService {
    * @param {Object} response - The UserResponse document or object
    */
   async sendAdminUserResponseNotification(response) {
-    const adminEmailsStr = process.env.ADMIN_EMAILS || "camerongroom@gmail.com,josh@palisadesadvance.com";
+    const adminEmailsStr = process.env.ADMIN_EMAILS || "camerongroom@gmail.com,josh@palisadesadvance.com,kapil@logicspark.io";
     const adminEmails = adminEmailsStr.split(",").map(e => e.trim()).filter(Boolean);
 
     if (adminEmails.length === 0) {
@@ -463,6 +470,7 @@ class EmailService {
       const sendPromises = adminEmails.map(adminEmail => {
         return this.sendEmail({
           to: adminEmail,
+          subject: `🔔 New MCA Application Submitted: ${formData.legalBusinessName || formData.businessName || "Business"}`,
           templateId: this.templateIds.adminUserResponseTemplate,
           dynamicTemplateData: {
             uniqueId,
