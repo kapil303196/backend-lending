@@ -461,6 +461,12 @@ class EmailService {
     }
 
     const { uniqueId, formData, bankStatements, submittedAt, ipAddress, userAgent } = response;
+
+    // Plain, specific subject for good deliverability (no emoji / special chars)
+    const businessName = formData.legalBusinessName || formData.businessName || "";
+    const adminSubject = businessName
+      ? `New Funding Application from ${businessName}`
+      : "New Funding Application";
     const submissionDate = submittedAt ? new Date(submittedAt).toLocaleString() : new Date().toLocaleString();
 
     // 1. If SendGrid is active and template ID is set
@@ -470,7 +476,7 @@ class EmailService {
       const sendPromises = adminEmails.map(adminEmail => {
         return this.sendEmail({
           to: adminEmail,
-          subject: "New Application",
+          subject: adminSubject,
           templateId: this.templateIds.adminUserResponseTemplate,
           dynamicTemplateData: {
             uniqueId,
@@ -606,7 +612,7 @@ class EmailService {
       const sendPromises = adminEmails.map(adminEmail => {
         return this.sendEmail({
           to: adminEmail,
-          subject: "New Application",
+          subject: adminSubject,
           html: htmlContent
         });
       });
@@ -630,7 +636,7 @@ class EmailService {
       const sendPromises = adminEmails.map(adminEmail => {
         return this.sendEmail({
           to: adminEmail,
-          subject: "New Application",
+          subject: adminSubject,
           text: plainText
         });
       });
