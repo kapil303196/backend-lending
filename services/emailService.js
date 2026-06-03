@@ -460,7 +460,15 @@ class EmailService {
       return;
     }
 
-    const { uniqueId, formData, bankStatements, submittedAt, ipAddress, userAgent } = response;
+    // Convert to a plain object. `response` is usually a Mongoose document
+    // whose fields live on prototype getters, and Handlebars (>=4.6) refuses to
+    // read prototype properties by default — that left bank-statement URLs and
+    // nested objects rendering empty. toObject() gives plain, own-property data.
+    const plain =
+      response && typeof response.toObject === "function"
+        ? response.toObject()
+        : response;
+    const { uniqueId, formData, bankStatements, submittedAt, ipAddress, userAgent } = plain;
 
     // Plain, specific subject for good deliverability (no emoji / special chars)
     const businessName = formData.legalBusinessName || formData.businessName || "";
