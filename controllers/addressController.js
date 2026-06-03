@@ -1,4 +1,4 @@
-const { searchAddress, getAddressDetails, geocodeAddress } = require('../utils/googleMaps');
+const { searchAddress, getAddressDetails, geocodeAddress } = require('../utils/addressProvider');
 
 // Search for address suggestions
 exports.searchAddress = async (req, res) => {
