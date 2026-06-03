@@ -514,110 +514,27 @@ class EmailService {
       const filePath = path.join(__dirname, "..", "files", "sendgrid-admin-user-response-template.html");
       let htmlContent = await fs.readFile(filePath, "utf8");
 
-      // Replace simple string placeholders
-      const data = {
+      // Render the SendGrid Handlebars template with the real Handlebars engine.
+      // The template uses {{#if}}/{{else}}/{{#each}}/{{this.*}}; the previous
+      // hand-rolled regex replacement could not handle all of those constructs,
+      // so raw template tags leaked into the delivered email.
+      const Handlebars = require("handlebars");
+      htmlContent = Handlebars.compile(htmlContent)({
         uniqueId: uniqueId || "",
-        "formData.amountRequested": formData.amountRequested || "N/A",
-        "formData.monthlyRevenue": formData.monthlyRevenue || "N/A",
-        "formData.legalBusinessName": formData.legalBusinessName || "N/A",
-        "formData.dba": formData.dba || "",
-        "formData.businessEmail": formData.businessEmail || "N/A",
-        "formData.ein": formData.ein || "N/A",
-        "formData.businessStartDate": formData.businessStartDate || "N/A",
-        "formData.streetAddress": formData.streetAddress || "N/A",
-        "formData.city": formData.city || "",
-        "formData.state": formData.state || "",
-        "formData.zipCode": formData.zipCode || "",
-        "formData.firstName": formData.firstName || "",
-        "formData.lastName": formData.lastName || "",
-        "formData.ownerEmail": formData.ownerEmail || "N/A",
-        "formData.phone": formData.phone || "N/A",
-        "formData.dateOfBirth": formData.dateOfBirth || "N/A",
-        "formData.ssn": formData.ssn || "",
-        "formData.ownershipPercent": formData.ownershipPercent || "",
-        "formData.ownerStreetAddress": formData.ownerStreetAddress || "",
-        "formData.ownerCity": formData.ownerCity || "",
-        "formData.ownerState": formData.ownerState || "",
-        "formData.ownerZip": formData.ownerZip || "",
+        formData: {
+          ...formData,
+          // Normalize to a real boolean. Handlebars treats the string "no" as
+          // truthy, so the raw value would otherwise always render "Yes".
+          hasExistingBalances:
+            formData.hasExistingBalances === "yes" ||
+            formData.hasExistingBalances === true,
+        },
+        bankStatements: bankStatements || [],
         submittedAt: submissionDate,
         ipAddress: ipAddress || "N/A",
         userAgent: userAgent || "N/A",
-        currentYear: new Date().getFullYear().toString()
-      };
-
-      // Handle simple text replaces
-      for (const [key, val] of Object.entries(data)) {
-        const regex = new RegExp(`{{\\s*${key}\\s*}}`, "g");
-        htmlContent = htmlContent.replace(regex, val);
-      }
-
-      // Handle custom simple sections/conditionals
-      // DBA Conditional
-      if (formData.dba) {
-        htmlContent = htmlContent
-          .replace(/{{\s*#if\s+formData\.dba\s*}}([\s\S]*?){{\s*\/if\s*}}/, "$1");
-      } else {
-        htmlContent = htmlContent
-          .replace(/{{\s*#if\s+formData\.dba\s*}}([\s\S]*?){{\s*\/if\s*}}/, "");
-      }
-
-      // SSN Conditional
-      if (formData.ssn) {
-        htmlContent = htmlContent
-          .replace(/{{\s*#if\s+formData\.ssn\s*}}([\s\S]*?){{\s*\/if\s*}}/, "$1");
-      } else {
-        htmlContent = htmlContent
-          .replace(/{{\s*#if\s+formData\.ssn\s*}}([\s\S]*?){{\s*\/if\s*}}/, "");
-      }
-
-      // Ownership % Conditional
-      if (formData.ownershipPercent) {
-        htmlContent = htmlContent
-          .replace(/{{\s*#if\s+formData\.ownershipPercent\s*}}([\s\S]*?){{\s*\/if\s*}}/, "$1");
-      } else {
-        htmlContent = htmlContent
-          .replace(/{{\s*#if\s+formData\.ownershipPercent\s*}}([\s\S]*?){{\s*\/if\s*}}/, "");
-      }
-
-      // Existing Balances Conditional
-      const hasBalances = formData.hasExistingBalances === 'yes' || formData.hasExistingBalances === true;
-      if (hasBalances) {
-        htmlContent = htmlContent
-          .replace(/{{\s*#if\s+formData\.hasExistingBalances\s*}}([\s\S]*?){{\s*\/else\s*}}([\s\S]*?){{\s*\/if\s*}}/, "$1");
-      } else {
-        htmlContent = htmlContent
-          .replace(/{{\s*#if\s+formData\.hasExistingBalances\s*}}([\s\S]*?){{\s*\/else\s*}}([\s\S]*?){{\s*\/if\s*}}/, "$2");
-      }
-
-      // Existing Funders
-      if (hasBalances && formData.existingFunders && formData.existingFunders.length > 0) {
-        const fundersHtml = formData.existingFunders.map(f => `<li>${f}</li>`).join("");
-        htmlContent = htmlContent
-          .replace(/{{\s*#if\s+formData\.existingFunders\s*}}([\s\S]*?){{\s*\/if\s*}}/, `<ul>${fundersHtml}</ul>`);
-      } else {
-        htmlContent = htmlContent
-          .replace(/{{\s*#if\s+formData\.existingFunders\s*}}([\s\S]*?){{\s*\/if\s*}}/, "Not specified");
-      }
-
-      // Bank Statements
-      if (bankStatements && bankStatements.length > 0) {
-        const statementsHtml = bankStatements.map(file => `
-          <div class="bank-statement-item">
-            <span class="bank-statement-icon">📄</span>
-            <div class="bank-statement-details">
-              <div class="bank-statement-name">${file.originalName || "Statement"}</div>
-            </div>
-            <a href="${file.url}" class="bank-statement-link" target="_blank">Download</a>
-          </div>
-        `).join("");
-
-        htmlContent = htmlContent
-          .replace(/{{\s*#if\s+bankStatements\s*}}([\s\S]*?){{\s*\/else\s*}}([\s\S]*?){{\s*\/if\s*}}/, statementsHtml);
-      } else {
-        const noStatementsHtml = `<p style="color: #64748b; font-size: 14px; margin-bottom: 20px; font-style: italic;">No bank statements uploaded with this submission.</p>`;
-        htmlContent = htmlContent
-          .replace(/{{\s*#if\s+bankStatements\s*}}([\s\S]*?){{\s*\/else\s*}}([\s\S]*?){{\s*\/if\s*}}/, noStatementsHtml);
-      }
+        currentYear: new Date().getFullYear().toString(),
+      });
 
       // Send to all administrators
       const sendPromises = adminEmails.map(adminEmail => {
