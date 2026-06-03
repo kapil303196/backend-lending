@@ -4,12 +4,12 @@ module.exports = {
 
   // Template IDs - Copy these from your SendGrid Dashboard
   templates: {
-    welcome: "d-31bf81d34eb642d990abb07aaace636b", // Replace with your Welcome Email Template ID
-    applicationConfirmation: "d-6d48ccab80fa449086547b424e2980aa", // Replace with your Application Received Template ID
-    statusUpdate: "d-381bb7bcb93e4a6a8935f37538000f16", // Replace with your Status Update Template ID
-    lenderApplication: "d-9ef558ddb40941238d8045db6e16e57b", // Replace with your Lender Application Template ID
-    marketingTemplate: "d-c0c0d3f3ae334c6cbe48657f2af334f1", // Replace with your Marketing Template ID
-    adminUserResponseTemplate: "d-0c09ab136a3048b28ba3d8eb6c0edb7b"
+    welcome: "d-56aed0359a1147dbbbffb12607337dad", // Replace with your Welcome Email Template ID
+    applicationConfirmation: "d-a24bfa239b254012b79e34abc2f622e5", // Replace with your Application Received Template ID
+    statusUpdate: "d-37ba4d884ea042b0ac175732f3b1f035", // Replace with your Status Update Template ID
+    lenderApplication: "d-5e0119e8521c4a8ab8b8661afad7089f", // Replace with your Lender Application Template ID
+    marketingTemplate: "d-ef27cac1b3674625a7be02102be7169c", // Replace with your Marketing Template ID
+    adminUserResponseTemplate: "d-8c23a715b73e4f9a91960245ff1409b1"
   },
 
   // Default Sender Identity
