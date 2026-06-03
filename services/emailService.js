@@ -469,8 +469,19 @@ class EmailService {
       : "New Funding Application";
     const submissionDate = submittedAt ? new Date(submittedAt).toLocaleString() : new Date().toLocaleString();
 
-    // 1. If SendGrid is active and template ID is set
-    if (this.useSendGrid && this.templateIds.adminUserResponseTemplate) {
+    // 1. SendGrid dynamic-template path — DISABLED by default.
+    //    The dynamic template (d-8c23a715...) has a blank Subject field, and for
+    //    SendGrid dynamic templates the template's own subject overrides the
+    //    message-level subject. That produced admin emails with NO subject line.
+    //    We fall through to the rendered-HTML path below, which reliably applies
+    //    `adminSubject`. To re-enable the dynamic template, first set its Subject
+    //    in the SendGrid editor (e.g. to {{subject}}), then set
+    //    USE_ADMIN_SENDGRID_TEMPLATE=true.
+    if (
+      this.useSendGrid &&
+      this.templateIds.adminUserResponseTemplate &&
+      process.env.USE_ADMIN_SENDGRID_TEMPLATE === "true"
+    ) {
       console.log("✅ Using SendGrid Dynamic Template for admin notification email");
       
       const sendPromises = adminEmails.map(adminEmail => {
