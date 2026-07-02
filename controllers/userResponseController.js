@@ -194,6 +194,18 @@ exports.createResponse = async (req, res) => {
           : bankStatements;
     }
 
+    if (responseData.formData?.formType === "simple" &&
+        responseData.formData?.monthlyRevenue !== undefined &&
+        responseData.formData?.monthlyRevenue !== null &&
+        responseData.formData?.monthlyRevenue !== "") {
+      const parsedRevenue = parseFloat(
+        String(responseData.formData.monthlyRevenue).replace(/[^0-9.-]/g, "")
+      );
+      if (!isNaN(parsedRevenue)) {
+        responseData.formData.monthlyRevenue = parsedRevenue;
+      }
+    }
+
     // Get IP address (handle proxy headers)
     const ipAddress = req.headers["x-forwarded-for"]
       ? req.headers["x-forwarded-for"].split(",")[0].trim()

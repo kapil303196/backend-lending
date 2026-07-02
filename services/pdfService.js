@@ -59,15 +59,22 @@ function formatPhone(phone) {
 }
 
 /**
+ * Parse currency value from string or number
+ */
+function parseCurrencyValue(value) {
+  if (value === undefined || value === null || value === '') return 0;
+  if (typeof value === 'number') return isNaN(value) ? 0 : value;
+  const parsed = parseFloat(String(value).replace(/[^0-9.-]/g, ''));
+  return isNaN(parsed) ? 0 : parsed;
+}
+
+/**
  * Format currency for display
  */
 function formatCurrency(value) {
-  if (!value) return '';
-  const cleanValue = typeof value === 'string' 
-    ? value.replace(/[^0-9.-]/g, '')
-    : String(value);
-  const numericValue = parseFloat(cleanValue);
-  if (isNaN(numericValue)) return value;
+  if (value === undefined || value === null || value === '') return '';
+  const numericValue = parseCurrencyValue(value);
+  if (!numericValue) return typeof value === 'string' && value.startsWith('$') ? value : '';
   return '$' + numericValue.toLocaleString('en-US', {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0
@@ -214,7 +221,7 @@ async function drawTextSignature(pdfDoc, page, signatureText) {
 function mergeApplicationData(mcaData, formData) {
   const merged = {
     // Business Information - prefer formData, fallback to mcaData
-    legalBusinessName: formData?.legalBusinessName || mcaData?.company || '',
+    legalBusinessName: formData?.legalBusinessName || formData?.businessName || mcaData?.company || '',
     dba: formData?.dba || '',
     streetAddress: formData?.streetAddress || mcaData?.address || '',
     city: formData?.city || mcaData?.city || '',
@@ -332,8 +339,8 @@ async function generateFilledPDF(mcaData, formData, options = {}) {
     const ownerFullName = `${data.firstName} ${data.lastName}`.trim();
     
     // Calculate annual sales from monthly revenue
-    const monthlyRev = parseFloat((data.monthlyRevenue || '0').replace(/[^0-9.-]/g, ''));
-    const annualSales = !isNaN(monthlyRev) ? monthlyRev * 12 : 0;
+    const monthlyRev = parseCurrencyValue(data.monthlyRevenue);
+    const annualSales = monthlyRev ? monthlyRev * 12 : 0;
     
     // Calculate total existing balance
     const hasBalances = data.hasExistingBalances?.toLowerCase() === 'yes';
@@ -341,8 +348,7 @@ async function generateFilledPDF(mcaData, formData, options = {}) {
     let fundersText = '';
     if (hasBalances && data.existingFunders?.length > 0) {
       totalBalance = data.existingFunders.reduce((sum, f) => {
-        const bal = parseFloat((f.balanceRemaining || '0').replace(/[^0-9.-]/g, ''));
-        return sum + (isNaN(bal) ? 0 : bal);
+        return sum + parseCurrencyValue(f.balanceRemaining);
       }, 0);
       fundersText = data.existingFunders
         .map(f => `${f.funderName}: ${formatCurrency(f.balanceRemaining)}`)
