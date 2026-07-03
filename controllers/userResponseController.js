@@ -206,6 +206,9 @@ exports.createResponse = async (req, res) => {
       }
     }
 
+    const isSimpleInitial = responseData.formData?.formType === "simple";
+    const applicationStage = isSimpleInitial ? "initial" : "complete";
+
     // Get IP address (handle proxy headers)
     const ipAddress = req.headers["x-forwarded-for"]
       ? req.headers["x-forwarded-for"].split(",")[0].trim()
@@ -215,6 +218,7 @@ exports.createResponse = async (req, res) => {
     const userResponse = new UserResponse({
       mcaId: mca._id,
       uniqueId: uniqueId,
+      applicationStage,
       ...responseData,
       bankStatements: bankStatementsArray,
       ipAddress: ipAddress,
@@ -315,6 +319,29 @@ exports.createResponse = async (req, res) => {
       // Don't fail the main request if notification email fails
     }
 
+    // Schedule follow-up email for simple (stage 1) applications via SendGrid sendAt
+    if (isSimpleInitial && !userResponse.followUpEmailScheduledAt) {
+      try {
+        await emailService.scheduleCompletionFollowUpEmail(
+          responseData.formData.businessEmail,
+          {
+            name:
+              responseData.formData.name ||
+              responseData.formData.businessName ||
+              "Valued Customer",
+            uniqueId,
+          }
+        );
+        userResponse.followUpEmailScheduledAt = new Date();
+        await userResponse.save();
+      } catch (scheduleError) {
+        console.error(
+          `❌ Failed to schedule completion follow-up for ${uniqueId}:`,
+          scheduleError.message
+        );
+      }
+    }
+
     res.status(201).json({
       success: true,
       message: "Response submitted successfully",
@@ -329,6 +356,118 @@ exports.createResponse = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Error creating response",
+      error: error.message,
+    });
+  }
+};
+
+// Get incomplete (stage 1) application by uniqueId for completion form
+exports.getIncompleteResponse = async (req, res) => {
+  try {
+    const { uniqueId } = req.params;
+
+    const response = await UserResponse.findOne({
+      uniqueId: new RegExp(`^${uniqueId}$`, "i"),
+      applicationStage: "initial",
+      isActive: true,
+    }).sort({ createdAt: -1 });
+
+    if (!response) {
+      return res.status(404).json({
+        success: false,
+        message: "No pending application found for this link",
+      });
+    }
+
+    res.json({
+      success: true,
+      data: response,
+    });
+  } catch (error) {
+    console.error("Get incomplete response error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching incomplete application",
+      error: error.message,
+    });
+  }
+};
+
+// Complete stage 2 application — merge into existing UserResponse
+exports.completeApplication = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { bankStatements, ...updateData } = req.body;
+
+    const existing = await UserResponse.findById(id);
+
+    if (!existing || !existing.isActive) {
+      return res.status(404).json({
+        success: false,
+        message: "Application not found",
+      });
+    }
+
+    if (existing.applicationStage === "complete") {
+      return res.status(400).json({
+        success: false,
+        message: "This application has already been completed",
+      });
+    }
+
+    let bankStatementsArray = existing.bankStatements || [];
+    if (bankStatements) {
+      bankStatementsArray =
+        typeof bankStatements === "string"
+          ? JSON.parse(bankStatements)
+          : bankStatements;
+    }
+
+    const mergedFormData = {
+      ...(existing.formData || {}),
+      ...(updateData.formData || {}),
+      formType: existing.formData?.formType || "simple",
+    };
+
+    if (
+      mergedFormData.formType === "simple" &&
+      mergedFormData.monthlyRevenue !== undefined &&
+      mergedFormData.monthlyRevenue !== null &&
+      mergedFormData.monthlyRevenue !== "" &&
+      typeof mergedFormData.monthlyRevenue === "string"
+    ) {
+      const parsedRevenue = parseFloat(
+        String(mergedFormData.monthlyRevenue).replace(/[^0-9.-]/g, "")
+      );
+      if (!isNaN(parsedRevenue)) {
+        mergedFormData.monthlyRevenue = parsedRevenue;
+      }
+    }
+
+    existing.formData = mergedFormData;
+    existing.bankStatements = bankStatementsArray;
+    existing.applicationStage = "complete";
+    existing.status = updateData.status || "submitted";
+    existing.userContact = updateData.userContact || existing.userContact;
+    existing.comments =
+      updateData.comments || "Application completed with additional details";
+
+    if (existing.status === "submitted" && !existing.submittedAt) {
+      existing.submittedAt = new Date();
+    }
+
+    await existing.save();
+
+    res.json({
+      success: true,
+      message: "Application completed successfully",
+      data: existing,
+    });
+  } catch (error) {
+    console.error("Complete application error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error completing application",
       error: error.message,
     });
   }

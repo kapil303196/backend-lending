@@ -66,6 +66,19 @@ const userResponseSchema = new mongoose.Schema(
       default: "pending",
     },
 
+    // Two-stage application flow: initial (simple form) → complete (full form)
+    applicationStage: {
+      type: String,
+      enum: ["initial", "complete"],
+      default: "complete",
+      index: true,
+    },
+
+    // SendGrid native scheduled send timestamp for stage-2 follow-up email
+    followUpEmailScheduledAt: {
+      type: Date,
+    },
+
     // Soft delete flag
     isActive: {
       type: Boolean,

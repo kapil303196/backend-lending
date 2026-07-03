@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Complete Your Funding Application</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; background-color: #f4f4f4; }
+        .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; }
+        .header { background: #0A4A4A; padding: 40px 20px; text-align: center; }
+        .header h1 { color: #ffffff; font-size: 26px; margin-bottom: 8px; }
+        .header p { color: #d1fae5; font-size: 16px; }
+        .content { padding: 40px 30px; }
+        .message-box { background-color: #f0fdfa; border-left: 4px solid #0A4A4A; padding: 20px; margin: 20px 0; border-radius: 4px; }
+        .button { display: inline-block; padding: 14px 32px; background: #0A4A4A; color: #ffffff !important; text-decoration: none; border-radius: 999px; margin: 24px 0; font-weight: 600; }
+        .footer { background-color: #f8f9fa; padding: 30px; text-align: center; color: #6c757d; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Almost There!</h1>
+            <p>One more step to finalize your funding application</p>
+        </div>
+
+        <div class="content">
+            <p>Hello <strong>{{name}}</strong>,</p>
+
+            <div class="message-box">
+                <p>Thank you for starting your funding application with Heroic Funding.</p>
+                <p style="margin-top: 12px;">To finalize your application, we need a few additional details such as bank statements, owner information, and other required documents.</p>
+            </div>
+
+            <p>Please click the button below to securely complete the remaining steps. This should only take a few minutes.</p>
+
+            <div style="text-align: center;">
+                <a href="{{completionUrl}}" class="button">Complete My Application</a>
+            </div>
+
+            <p style="margin-top: 20px; font-size: 14px; color: #666;">
+                If the button does not work, copy and paste this link into your browser:<br>
+                <a href="{{completionUrl}}" style="color: #0A4A4A; word-break: break-all;">{{completionUrl}}</a>
+            </p>
+
+            <p style="margin-top: 24px; font-size: 14px; color: #666;">
+                Application ID: <strong>{{uniqueId}}</strong>
+            </p>
+        </div>
+
+        <div class="footer">
+            <p>© {{currentYear}} Heroic Funding. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>

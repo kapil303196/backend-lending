@@ -280,15 +280,22 @@ class EmailService {
     if (options.cc) msg.cc = options.cc;
     if (options.bcc) msg.bcc = options.bcc;
 
+    // SendGrid native scheduled send (Unix timestamp, max 72 hours ahead)
+    if (options.sendAt) {
+      msg.sendAt = options.sendAt;
+    }
+
     let lastError;
     // ... retry logic (kept same)
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
         const response = await sgMail.send(msg);
-        console.log(`✅ Email sent via SendGrid to ${options.to}`);
+        const action = options.sendAt ? "scheduled" : "sent";
+        console.log(`✅ Email ${action} via SendGrid to ${options.to}`);
         return {
           success: true,
           messageId: response[0].headers["x-message-id"],
+          scheduledFor: options.sendAt || null,
           response: response[0],
         };
       } catch (error) {
@@ -622,6 +629,144 @@ class EmailService {
       subject: "✅ Application Submitted Successfully - Heroic Funding",
       html: html,
     });
+  }
+
+
+  /**
+   * Schedule follow-up email via SendGrid native sendAt (stage 2 completion link)
+   */
+  getCompletionFollowUpDelayMs() {
+    const minutes = parseInt(
+      process.env.FOLLOW_UP_EMAIL_DELAY_MINUTES || "10",
+      10
+    );
+    if (isNaN(minutes) || minutes < 1) {
+      return 10 * 60 * 1000;
+    }
+    return minutes * 60 * 1000;
+  }
+
+  getFrontendDeployedUrl() {
+    return (
+      process.env.FRONTEND_DEPLOYED_URL ||
+      process.env.FRONTEND_URL ||
+      "http://localhost:5173"
+    ).replace(/\/$/, "");
+  }
+
+  async scheduleCompletionFollowUpEmail(userEmail, data) {
+    const { name, uniqueId } = data;
+    const subject = "Action Required: Complete Your Funding Application";
+    const completionUrl = `${this.getFrontendDeployedUrl()}/form/complete/${uniqueId}`;
+    const sendAt = Math.floor(
+      (Date.now() + this.getCompletionFollowUpDelayMs()) / 1000
+    );
+
+    if (!this.useSendGrid) {
+      throw new Error(
+        "SendGrid is required to schedule completion follow-up emails"
+      );
+    }
+
+    if (!this.templateIds.completionFollowUp) {
+      throw new Error(
+        "COMPLETION_FOLLOWUP_TEMPLATE_ID is not configured"
+      );
+    }
+
+    const dynamicTemplateData = {
+      name: name || "Valued Customer",
+      uniqueId: uniqueId || "",
+      completionUrl,
+      currentYear: new Date().getFullYear(),
+      subject,
+    };
+
+    const result = await this.sendEmail({
+      to: userEmail,
+      subject,
+      templateId: this.templateIds.completionFollowUp,
+      sendAt,
+      dynamicTemplateData,
+    });
+
+    console.log(
+      `📅 Completion follow-up scheduled via SendGrid for ${userEmail} at ${new Date(sendAt * 1000).toISOString()}`
+    );
+
+    return { ...result, scheduledFor: sendAt, completionUrl };
+  }
+
+  /**
+   * Send follow-up email immediately (fallback / testing only)
+   */
+  async sendCompletionFollowUpEmail(userEmail, data) {
+    const { name, uniqueId, completionUrl: providedUrl } = data;
+    const subject = "Action Required: Complete Your Funding Application";
+    const completionUrl =
+      providedUrl ||
+      `${this.getFrontendDeployedUrl()}/form/complete/${uniqueId}`;
+
+    if (this.useSendGrid && this.templateIds.completionFollowUp) {
+      return await this.sendEmail({
+        to: userEmail,
+        subject,
+        templateId: this.templateIds.completionFollowUp,
+        dynamicTemplateData: {
+          name: name || "Valued Customer",
+          uniqueId: uniqueId || "",
+          completionUrl,
+          currentYear: new Date().getFullYear(),
+        },
+      });
+    }
+
+    try {
+      const fs = require("fs").promises;
+      const path = require("path");
+      const Handlebars = require("handlebars");
+      const filePath = path.join(
+        __dirname,
+        "..",
+        "files",
+        "sendgrid-complete-application-followup.html"
+      );
+      const htmlContent = await fs.readFile(filePath, "utf8");
+      const html = Handlebars.compile(htmlContent)({
+        name: name || "Valued Customer",
+        uniqueId: uniqueId || "",
+        completionUrl,
+        currentYear: new Date().getFullYear().toString(),
+      });
+
+      return await this.sendEmail({
+        to: userEmail,
+        subject,
+        html,
+      });
+    } catch (err) {
+      console.error("❌ Failed to render completion follow-up email:", err);
+      const plainText = `
+Hello ${name || "there"},
+
+Thank you for starting your funding application with Heroic Funding.
+
+To finalize your application, we need a few additional details such as bank statements, owner information, and other required documents.
+
+Please complete your application here:
+${completionUrl}
+
+Application ID: ${uniqueId}
+
+© ${new Date().getFullYear()} Heroic Funding
+      `.trim();
+
+      return await this.sendEmail({
+        to: userEmail,
+        subject,
+        text: plainText,
+      });
+    }
   }
 
   /**

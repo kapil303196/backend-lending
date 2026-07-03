@@ -9,7 +9,8 @@ module.exports = {
     statusUpdate: "d-37ba4d884ea042b0ac175732f3b1f035", // Replace with your Status Update Template ID
     lenderApplication: "d-5e0119e8521c4a8ab8b8661afad7089f", // Replace with your Lender Application Template ID
     marketingTemplate: "d-ef27cac1b3674625a7be02102be7169c", // Replace with your Marketing Template ID
-    adminUserResponseTemplate: "d-8c23a715b73e4f9a91960245ff1409b1"
+    adminUserResponseTemplate: "d-8c23a715b73e4f9a91960245ff1409b1",
+    completionFollowUp: "d-49a6f7b83eb2435ea8316afe3e4f1946",
   },
 
   // Default Sender Identity

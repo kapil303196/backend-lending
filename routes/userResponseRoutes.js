@@ -81,6 +81,15 @@ router.get("/stats", userResponseController.getResponseStats);
 
 /**
  * @swagger
+ * /api/responses/incomplete/{uniqueId}:
+ *   get:
+ *     tags: [User Responses]
+ *     summary: Get incomplete stage-1 application by uniqueId
+ */
+router.get("/incomplete/:uniqueId", userResponseController.getIncompleteResponse);
+
+/**
+ * @swagger
  * /api/responses/mca/{id}:
  *   get:
  *     tags: [User Responses]
@@ -186,6 +195,15 @@ router.get("/:id", userResponseController.getResponseById);
  *         description: MCA record not found
  */
 router.post("/", userResponseController.createResponse);
+
+/**
+ * @swagger
+ * /api/responses/{id}/complete:
+ *   patch:
+ *     tags: [User Responses]
+ *     summary: Complete stage-2 application (merge additional details)
+ */
+router.patch("/:id/complete", userResponseController.completeApplication);
 
 /**
  * @swagger
