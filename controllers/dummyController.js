@@ -6,13 +6,18 @@ const emailService = require("../services/emailService");
 const sendMarketingEmail = async (req, res) => {
   try {
     const { to, uniqueId } = req.body;
-    if (!to || !uniqueId) {
+    if (!to) {
       return res
         .status(400)
-        .json({ success: false, message: "to and uniqueId are required" });
+        .json({ success: false, message: "to is required" });
     }
 
-    const result = await emailService.sendMarketingTemplateEmail(to, uniqueId);
+    // uniqueId is optional; when omitted the email links to the "new"
+    // application route on the apply frontend.
+    const result = await emailService.sendMarketingTemplateEmail(
+      to,
+      uniqueId || "new"
+    );
     res.json(result);
   } catch (error) {
     console.error("Error sending marketing email:", error);

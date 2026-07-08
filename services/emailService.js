@@ -184,8 +184,12 @@ class EmailService {
     const backendUrl =
       process.env.BACKEND_DEPLOYED_URL ||
       `http://localhost:${process.env.PORT || 5000}`;
+    // Marketing links point to the dedicated apply frontend (kept separate
+    // from the main deployed frontend).
     const frontendUrl =
-      process.env.FRONTEND_DEPLOYED_URL || "http://localhost:8080";
+      process.env.FRONTEND_DEPLOYED_APPLY_URL || "http://localhost:8080";
+    // When no application exists yet, link to the "new" application route.
+    const applyId = uniqueId || "new";
 
     // Use SendGrid Dynamic Template if ID is available
     if (this.useSendGrid && this.templateIds.marketingTemplate) {
@@ -196,7 +200,7 @@ class EmailService {
         dynamicTemplateData: {
           BACKEND_URL: backendUrl,
           FRONTEND_URL: frontendUrl,
-          uniqueId: uniqueId,
+          uniqueId: applyId,
           supportEmail: process.env.SUPPORT_EMAIL || "support@logicspark.com",
         },
       });
@@ -216,7 +220,7 @@ class EmailService {
     htmlContent = htmlContent
       .replace(/{{BACKEND_URL}}/g, backendUrl)
       .replace(/{{FRONTEND_URL}}/g, frontendUrl)
-      .replace(/{{uniqueId}}/g, uniqueId);
+      .replace(/{{uniqueId}}/g, applyId);
 
     return await this.sendEmail({
       to,
@@ -421,6 +425,8 @@ class EmailService {
   async sendWelcomeEmail(userEmail, userData) {
     const { name, email, password, uniqueId } = userData;
 
+    const loginUrl = `${this.getFrontendDeployedUrl()}/user/login`;
+
     // Use SendGrid Dynamic Template if ID is available
     if (this.useSendGrid && this.templateIds.welcome) {
       return await this.sendEmail({
@@ -431,7 +437,8 @@ class EmailService {
           email: email,
           password: password,
           uniqueId: uniqueId,
-          loginUrl: process.env.FRONTEND_URL || "https://your-app.com/login",
+          loginUrl: loginUrl,
+          currentYear: new Date().getFullYear(),
           supportEmail: process.env.SUPPORT_EMAIL || "support@logicspark.com",
         },
       });
@@ -443,7 +450,7 @@ class EmailService {
       email: email,
       password: password,
       uniqueId: uniqueId,
-      loginUrl: process.env.FRONTEND_URL || "https://your-app.com/login",
+      loginUrl: loginUrl,
       supportEmail: process.env.SUPPORT_EMAIL || "support@logicspark.com",
     });
 
@@ -869,80 +876,80 @@ Application ID: ${uniqueId}
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Welcome to Heroic Funding</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; background-color: #f4f4f4; }
-        .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; }
-        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 20px; text-align: center; }
-        .header h1 { color: #ffffff; font-size: 28px; margin-bottom: 10px; }
-        .header p { color: #e0e7ff; font-size: 16px; }
-        .content { padding: 40px 30px; }
-        .welcome-box { background-color: #f8f9ff; border-left: 4px solid #667eea; padding: 20px; margin: 20px 0; border-radius: 4px; }
-        .credentials-box { background-color: #fff; border: 2px solid #667eea; padding: 25px; margin: 25px 0; border-radius: 8px; }
-        .credentials-box h3 { color: #667eea; margin-bottom: 15px; font-size: 18px; }
-        .credential-item { margin: 12px 0; padding: 12px; background-color: #f8f9ff; border-radius: 4px; }
-        .credential-label { font-weight: 600; color: #555; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
-        .credential-value { font-size: 16px; color: #333; margin-top: 4px; font-family: 'Courier New', monospace; }
-        .button { display: inline-block; padding: 14px 32px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #ffffff; text-decoration: none; border-radius: 6px; margin: 20px 0; font-weight: 600; text-align: center; }
-        .button:hover { opacity: 0.9; }
-        .security-notice { background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0; border-radius: 4px; }
-        .security-notice strong { color: #856404; }
-        .footer { background-color: #f8f9fa; padding: 30px; text-align: center; color: #6c757d; font-size: 14px; }
-        .footer a { color: #667eea; text-decoration: none; }
-        .divider { height: 1px; background-color: #e0e0e0; margin: 30px 0; }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Welcome to Heroic Funding</title>
 </head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>🎉 Welcome to Heroic Funding</h1>
-            <p>Your account has been created successfully</p>
-        </div>
-        
-        <div class="content">
-            <div class="welcome-box">
-                <p>Hello <strong>${data.name}</strong>,</p>
-                <p style="margin-top: 10px;">Thank you for choosing Heroic Funding. We're excited to have you on board! Your account has been created and you can now access our platform.</p>
-            </div>
+<body style="margin:0;padding:0;background-color:#f4f4f4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#f4f4f4;padding:24px 0;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="600" cellspacing="0" cellpadding="0" border="0" style="max-width:600px;width:100%;background-color:#ffffff;border-radius:8px;overflow:hidden;">
+          <!-- Header -->
+          <tr>
+            <td style="background-color:#0A4A4A;padding:36px 24px;text-align:center;">
+              <h1 style="margin:0;color:#ffffff;font-size:26px;font-weight:600;line-height:1.3;">Welcome to Heroic Funding</h1>
+              <p style="margin:10px 0 0;color:#d1fae5;font-size:16px;">Your account has been created successfully</p>
+            </td>
+          </tr>
 
-            <div class="credentials-box">
-                <h3>🔐 Your Login Credentials</h3>
-                <div class="credential-item">
-                    <div class="credential-label">Email Address</div>
-                    <div class="credential-value">${data.email}</div>
-                </div>
-                <div class="credential-item">
-                    <div class="credential-label">Temporary Password</div>
-                    <div class="credential-value">${data.password}</div>
-                </div>
-                <div class="credential-item">
-                    <div class="credential-label">Application ID</div>
-                    <div class="credential-value">${data.uniqueId}</div>
-                </div>
-            </div>
+          <!-- Body -->
+          <tr>
+            <td style="padding:36px 32px;color:#333333;font-size:16px;line-height:1.6;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 24px;background-color:#f0fdfa;border-left:4px solid #0A4A4A;border-radius:4px;">
+                <tr>
+                  <td style="padding:20px;font-size:15px;line-height:1.6;color:#134e4a;">
+                    <p style="margin:0 0 10px;">Hello <strong>${data.name}</strong>,</p>
+                    <p style="margin:0;">Thank you for choosing Heroic Funding. Your account has been created and you can now access our platform to track your application.</p>
+                  </td>
+                </tr>
+              </table>
 
-            <div class="security-notice">
-                <strong>⚠️ Security Notice:</strong> For your security, please change your password after your first login. Keep your credentials confidential and never share them with anyone.
-            </div>
+              <!-- Credentials -->
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 24px;border:2px solid #0A4A4A;border-radius:8px;">
+                <tr>
+                  <td style="padding:24px;">
+                    <h3 style="margin:0 0 16px;color:#0A4A4A;font-size:18px;">Your Login Credentials</h3>
+                    <p style="margin:0 0 4px;font-size:12px;font-weight:600;color:#555555;text-transform:uppercase;letter-spacing:0.5px;">Email Address</p>
+                    <p style="margin:0 0 16px;font-size:16px;color:#333333;font-family:'Courier New',monospace;">${data.email}</p>
+                    <p style="margin:0 0 4px;font-size:12px;font-weight:600;color:#555555;text-transform:uppercase;letter-spacing:0.5px;">Temporary Password</p>
+                    <p style="margin:0 0 16px;font-size:16px;color:#333333;font-family:'Courier New',monospace;">${data.password}</p>
+                    <p style="margin:0 0 4px;font-size:12px;font-weight:600;color:#555555;text-transform:uppercase;letter-spacing:0.5px;">Application ID</p>
+                    <p style="margin:0;font-size:16px;color:#333333;font-family:'Courier New',monospace;">${data.uniqueId}</p>
+                  </td>
+                </tr>
+              </table>
 
-            <div style="text-align: center;">
-                <a href="${
-                  data.loginUrl
-                }" class="button">Login to Your Account</a>
-            </div>
+              <!-- Security Notice -->
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 24px;background-color:#fff3cd;border-left:4px solid #ffc107;border-radius:4px;">
+                <tr>
+                  <td style="padding:15px;font-size:14px;line-height:1.6;color:#856404;">
+                    <strong>Security Notice:</strong> For your security, please change your password after your first login. Keep your credentials confidential and never share them with anyone.
+                  </td>
+                </tr>
+              </table>
 
-            <div class="divider"></div>
-        </div>
+              <!-- CTA Button -->
+              <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" style="margin:0 auto;">
+                <tr>
+                  <td align="center" style="border-radius:999px;background-color:#0A4A4A;">
+                    <a href="${data.loginUrl}" target="_blank" style="display:inline-block;padding:14px 36px;font-size:16px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:999px;">Login to Your Account</a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
 
-        <div class="footer">
-            <p style="margin-top: 20px; font-size: 12px; color: #999;">
-                © ${new Date().getFullYear()} Heroic Funding. All rights reserved.
-            </p>
-        </div>
-    </div>
+          <!-- Footer -->
+          <tr>
+            <td style="padding:24px 32px;background-color:#f8f9fa;text-align:center;font-size:13px;color:#6c757d;">
+              <p style="margin:0;">© ${new Date().getFullYear()} Heroic Funding. All rights reserved.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
 </body>
 </html>
     `;
