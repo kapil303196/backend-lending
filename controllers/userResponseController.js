@@ -282,32 +282,44 @@ exports.createResponse = async (req, res) => {
       );
     }
 
-    // Send welcome email with credentials (only for new users)
+    // Send welcome email with credentials.
+    // Only send for brand-new accounts, because the temp password is only
+    // persisted when the account is created. For existing users the stored
+    // password is unchanged, so emailing a new temp password would produce
+    // credentials that don't actually work for login.
+    if (isNewUser) {
+      try {
+        await emailService.sendWelcomeEmail(
+          responseData.formData.businessEmail,
+          {
+            name:
+              responseData.formData.businessName ||
+              responseData.formData.ownerName ||
+              "Valued Customer",
+            email: responseData.formData.businessEmail,
+            password: tempPassword,
+            uniqueId: uniqueId,
+          }
+        );
 
-    try {
-      await emailService.sendWelcomeEmail(responseData.formData.businessEmail, {
-        name:
-          responseData.formData.businessName ||
-          responseData.formData.ownerName ||
-          "Valued Customer",
-        email: responseData.formData.businessEmail,
-        password: tempPassword,
-        uniqueId: uniqueId,
-      });
-
+        console.log(
+          `✅ Welcome email sent successfully to ${responseData.formData.businessEmail}`
+        );
+      } catch (error) {
+        console.error(
+          `❌ Failed to send welcome email to ${responseData.formData.businessEmail}`
+        );
+        console.error(
+          "Full error details:",
+          JSON.stringify(error, Object.getOwnPropertyNames(error))
+        );
+        console.error("Stack trace:", error.stack);
+        // Don't fail the request if email fails - log it for admin review
+      }
+    } else {
       console.log(
-        `✅ Welcome email sent successfully to ${responseData.formData.businessEmail}`
+        `ℹ️ Skipping welcome email for existing user ${responseData.formData.businessEmail} (password unchanged)`
       );
-    } catch (error) {
-      console.error(
-        `❌ Failed to send welcome email to ${responseData.formData.businessEmail}`
-      );
-      console.error(
-        "Full error details:",
-        JSON.stringify(error, Object.getOwnPropertyNames(error))
-      );
-      console.error("Stack trace:", error.stack);
-      // Don't fail the request if email fails - log it for admin review
     }
 
     // Send admin notification email
